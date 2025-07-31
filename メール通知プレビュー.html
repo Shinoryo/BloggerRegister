@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>インデックス通知バッチ結果プレビュー</title>
+    <style>
+      table.result-table {
+        border-collapse: separate;
+        border-spacing: 0;
+        width: 100%;
+        font-family: 'Segoe UI', 'Meiryo', sans-serif;
+        box-shadow: 0 2px 8px #eee;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .result-table th, .result-table td {
+        border: 1px solid #ccc;
+        padding: 8px 12px;
+        text-align: left;
+      }
+      .result-table th {
+        background: #4f81bd;
+        color: #fff;
+        font-weight: bold;
+      }
+      .result-table tr:hover {
+        background: #f1f7ff;
+      }
+    </style>
+  </head>
+  <body>
+    <h2 style='font-family:Segoe UI,Meiryo,sans-serif;'>インデックス通知バッチ結果</h2>
+    <table class='result-table'>
+      <tr>
+        <th>URL</th><th>結果</th><th>HTTPステータス</th><th>メッセージ</th>
+      </tr>
+      <tr style='background-color:#eafbea;'>
+        <td style='word-break:break-all;'>https://example.com/success1</td>
+        <td style='font-weight:bold;color:#218838;'>成功</td>
+        <td>200</td>
+        <td><pre style='white-space:pre-wrap;margin:0;font-family:inherit;'>OK</pre></td>
+      </tr>
+      <tr style='background-color:#ffeaea;'>
+        <td style='word-break:break-all;'>https://example.com/fail1</td>
+        <td style='font-weight:bold;color:#c82333;'>失敗</td>
+        <td>404</td>
+        <td><pre style='white-space:pre-wrap;margin:0;font-family:inherit;'>Not Found</pre></td>
+      </tr>
+      <tr style='background-color:#eafbea;'>
+        <td style='word-break:break-all;'>https://example.com/success2</td>
+        <td style='font-weight:bold;color:#218838;'>成功</td>
+        <td>200</td>
+        <td><pre style='white-space:pre-wrap;margin:0;font-family:inherit;'>OK</pre></td>
+      </tr>
+    </table>
+  </body>
+</html>
