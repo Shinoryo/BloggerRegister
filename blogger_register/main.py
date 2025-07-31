@@ -4,7 +4,7 @@ import smtplib
 import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Any, Dict, List, Optional, Tuple, TypedDict
+from typing import Any, TypedDict
 
 import google.auth
 from google.auth.transport.requests import AuthorizedSession
@@ -12,12 +12,13 @@ from google.cloud import firestore
 from googleapiclient.discovery import build
 
 # 定数定義
-SCOPES: List[str] = ["https://www.googleapis.com/auth/indexing"]
+SCOPES: list[str] = ["https://www.googleapis.com/auth/indexing"]
 ENDPOINT: str = "https://indexing.googleapis.com/v3/urlNotifications:publish"
 BATCH_SIZE: int = 5
-SLEEP_SECONDS: int = 10  # API制限緩和のための待機時間（秒）
+SLEEP_SECONDS: int = 10  # API制限緩和のための待機時間(秒)
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
+HTTP_STATUS_OK = 200
 
 db = firestore.Client()
 
@@ -55,8 +56,9 @@ def get_env_vars() -> EnvVars:
     }
     for key, value in env.items():
         if not value:
-            raise EnvironmentError(f"環境変数 {key.upper()} が設定されていません。")
-    return env  # type: ignore
+            message = f"環境変数 {key.upper()} が設定されていません。"
+            raise OSError(message)
+    return env
 
 
 def encode_doc_id(url: str) -> str:
@@ -71,7 +73,7 @@ def encode_doc_id(url: str) -> str:
     return base64.urlsafe_b64encode(url.encode("utf-8")).decode("utf-8")
 
 
-def get_pending_url_docs(batch_size: int) -> List[firestore.DocumentSnapshot]:
+def get_pending_url_docs(batch_size: int) -> list[firestore.DocumentSnapshot]:
     """Firestoreから送信が古い、もしくは未送信のURL通知ドキュメントを指定数取得する。
 
     Args:
@@ -99,8 +101,9 @@ def update_last_sent_timestamp(doc_ref: firestore.DocumentReference) -> None:
 
 
 def send_indexing_notification(
-    url: str, authed_session: AuthorizedSession
-) -> Tuple[bool, int, str]:
+    url: str,
+    authed_session: AuthorizedSession,
+) -> tuple[bool, int, str]:
     """インデックス登録APIにURL更新通知を送信する。
 
     Args:
@@ -112,12 +115,12 @@ def send_indexing_notification(
     """
     payload = {"url": url, "type": "URL_UPDATED"}
     response = authed_session.post(ENDPOINT, json=payload)
-    success = response.status_code == 200
+    success = response.status_code == HTTP_STATUS_OK
     if success:
         print(f"通知送信成功: URL={url} ステータスコード={response.status_code}")
     else:
         print(
-            f"通知送信失敗: URL={url} ステータスコード={response.status_code} レスポンス={response.text}"
+            f"通知送信失敗: URL={url} ステータスコード={response.status_code} レスポンス={response.text}",  # noqa: E501
         )
     return success, response.status_code, response.text
 
@@ -130,10 +133,10 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
         api_key (str): APIキー
     """
     service = build("blogger", "v3", developerKey=api_key)
-    page_token: Optional[str] = None
+    page_token: str | None = None
 
     while True:
-        posts_response: Dict[str, Any] = (
+        posts_response: dict[str, Any] = (
             service.posts().list(blogId=blog_id, pageToken=page_token).execute()
         )
         for post in posts_response.get("items", []):
@@ -148,7 +151,7 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
                 data = doc.to_dict()
                 if "last_sent" not in data:
                     doc_ref.update({"last_sent": firestore.SERVER_TIMESTAMP})
-                # URLは念のため更新（merge=Trueにより上書きは避ける）
+                # URLは念のため更新(merge=Trueにより上書きは避ける)  # noqa: ERA001
                 doc_ref.set({"url": url}, merge=True)
             else:
                 # 新規登録時はlast_sentも初期化して登録
@@ -160,8 +163,8 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
             break
 
 
-def build_summary_email_body_html(results: List[NotificationResult]) -> str:
-    """全URL通知結果をまとめたHTMLメール本文を生成する（装飾付き）。
+def build_summary_email_body_html(results: list[NotificationResult]) -> str:
+    """全URL通知結果をまとめたHTMLメール本文を生成する(装飾付き)。
 
     Args:
         results (List[NotificationResult]): 通知結果リスト
@@ -170,11 +173,11 @@ def build_summary_email_body_html(results: List[NotificationResult]) -> str:
         str: HTML本文
     """
     rows = "".join(
-        f"<tr style='background-color:{'#eafbea' if r['status'] == 'success' else '#ffeaea'};'>"
+        f"<tr style='background-color:{'#eafbea' if r['status'] == 'success' else '#ffeaea'};'>"  # noqa: E501
         f"<td style='word-break:break-all;'>{r['url']}</td>"
-        f"<td style='font-weight:bold;color:{'#218838' if r['status'] == 'success' else '#c82333'};'>{'成功' if r['status'] == 'success' else '失敗'}</td>"
+        f"<td style='font-weight:bold;color:{'#218838' if r['status'] == 'success' else '#c82333'};'>{'成功' if r['status'] == 'success' else '失敗'}</td>"  # noqa: E501
         f"<td>{r['http_status']}</td>"
-        f"<td><pre style='white-space:pre-wrap;margin:0;font-family:inherit;'>{r['message']}</pre></td>"
+        f"<td><pre style='white-space:pre-wrap;margin:0;font-family:inherit;'>{r['message']}</pre></td>"  # noqa: E501
         f"</tr>"
         for r in results
     )
@@ -216,22 +219,22 @@ def build_summary_email_body_html(results: List[NotificationResult]) -> str:
         </table>
       </body>
     </html>
-    """
+    """  # noqa: E501
 
 
-def main(request: Any) -> Dict[str, List[NotificationResult]]:
+def main(request: Any) -> dict[str, list[NotificationResult]]:  # noqa: ANN401, ARG001
     """Cloud Functionsのエントリポイント。
     Blogger APIからURLを取得しFirestoreに登録後、未送信・古い通知をAPIに送信し更新する。
 
     Args:
-        request (Any): HTTPリクエストオブジェクト（Cloud Functions仕様）
+        request (Any): HTTPリクエストオブジェクト(Cloud Functions仕様)
 
     Returns:
         Dict[str, List[NotificationResult]]: 処理結果のリストを含む辞書
     """
     try:
         env = get_env_vars()
-    except EnvironmentError as e:
+    except OSError as e:
         print(str(e))
         return {"error": str(e)}, 500
 
@@ -243,14 +246,15 @@ def main(request: Any) -> Dict[str, List[NotificationResult]]:
     # Blogger APIからURL一覧をFirestoreに登録
     print("Blogger APIからURL一覧を取得し、Firestoreに登録します。")
     register_blog_urls_to_firestore(
-        blog_id=env["blog_id"], api_key=env["blogger_api_key"]
+        blog_id=env["blog_id"],
+        api_key=env["blogger_api_key"],
     )
 
     # Firestoreから送信待ちURLを取得
     print(f"Firestoreから送信待ちのURLを最大{BATCH_SIZE}件取得します。")
     pending_docs = get_pending_url_docs(batch_size=BATCH_SIZE)
 
-    results: List[NotificationResult] = []
+    results: list[NotificationResult] = []
     for doc in pending_docs:
         url = doc.to_dict().get("url")
         if not url:
@@ -267,7 +271,7 @@ def main(request: Any) -> Dict[str, List[NotificationResult]]:
                     "status": "success",
                     "http_status": status_code,
                     "message": "OK",
-                }
+                },
             )
         else:
             results.append(
@@ -276,7 +280,7 @@ def main(request: Any) -> Dict[str, List[NotificationResult]]:
                     "status": "failed",
                     "http_status": status_code,
                     "message": message,
-                }
+                },
             )
         time.sleep(SLEEP_SECONDS)  # API制限緩和のため待機
 
