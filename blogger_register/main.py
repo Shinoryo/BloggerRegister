@@ -170,9 +170,9 @@ def build_summary_email_body_html(results: List[NotificationResult]) -> str:
         str: HTML本文
     """
     rows = "".join(
-        f"<tr style='background-color:{'#eafbea' if r['status']=='success' else '#ffeaea'};'>"
+        f"<tr style='background-color:{'#eafbea' if r['status'] == 'success' else '#ffeaea'};'>"
         f"<td style='word-break:break-all;'>{r['url']}</td>"
-        f"<td style='font-weight:bold;color:{'#218838' if r['status']=='success' else '#c82333'};'>{'成功' if r['status']=='success' else '失敗'}</td>"
+        f"<td style='font-weight:bold;color:{'#218838' if r['status'] == 'success' else '#c82333'};'>{'成功' if r['status'] == 'success' else '失敗'}</td>"
         f"<td>{r['http_status']}</td>"
         f"<td><pre style='white-space:pre-wrap;margin:0;font-family:inherit;'>{r['message']}</pre></td>"
         f"</tr>"
