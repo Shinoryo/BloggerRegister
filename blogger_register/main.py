@@ -222,7 +222,7 @@ def build_summary_email_body_html(results: list[NotificationResult]) -> str:
     """  # noqa: E501
 
 
-def main(request: Any) -> dict[str, list[NotificationResult]]:  # noqa: ANN401, ARG001
+def main(request: Any) -> tuple[dict[str, Any], int]:  # noqa: ANN401, ARG001
     """Cloud Functionsのエントリポイント。
     Blogger APIからURLを取得しFirestoreに登録後、未送信・古い通知をAPIに送信し更新する。
 
@@ -230,7 +230,9 @@ def main(request: Any) -> dict[str, list[NotificationResult]]:  # noqa: ANN401, 
         request (Any): HTTPリクエストオブジェクト(Cloud Functions仕様)
 
     Returns:
-        Dict[str, List[NotificationResult]]: 処理結果のリストを含む辞書
+        Tuple[Dict[str, Any], int]:
+            処理結果のリストまたはエラーを含む辞書と
+            HTTPステータスコード
     """
     try:
         env = get_env_vars()
@@ -304,4 +306,4 @@ def main(request: Any) -> dict[str, list[NotificationResult]]:  # noqa: ANN401, 
         print(f"バッチ結果メール送信失敗: {subject} エラー={e}")
 
     print("処理結果:", results)
-    return {"results": results}
+    return {"results": results}, 200
