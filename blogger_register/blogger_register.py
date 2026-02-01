@@ -122,13 +122,21 @@ def get_pending_url_docs(batch_size: int) -> list[firestore.DocumentSnapshot]:
     return list(docs)
 
 
-def update_last_sent_timestamp(doc_ref: firestore.DocumentReference) -> None:
-    """Firestoreのドキュメントのlast_sentフィールドをサーバータイムスタンプで更新する。
+def update_last_sent_timestamps(
+    doc_refs: list[firestore.DocumentReference],
+) -> None:
+    """Firestoreのドキュメントのlast_sentフィールドをバッチで更新する。
 
     Args:
-        doc_ref (firestore.DocumentReference): 更新対象のドキュメント参照
+        doc_refs (list[firestore.DocumentReference]): 更新対象のドキュメント参照
     """
-    doc_ref.update({"last_sent": firestore.SERVER_TIMESTAMP})
+    if not doc_refs:
+        return
+    for start in range(0, len(doc_refs), FIRESTORE_BATCH_LIMIT):
+        batch = db.batch()
+        for doc_ref in doc_refs[start : start + FIRESTORE_BATCH_LIMIT]:
+            batch.update(doc_ref, {"last_sent": firestore.SERVER_TIMESTAMP})
+        batch.commit()
 
 
 def build_last_sent_cache(page_size: int) -> dict[str, bool]:
@@ -351,6 +359,7 @@ def main(request: Any) -> tuple[dict[str, Any], int]:  # noqa: ANN401, ARG001
     pending_docs = get_pending_url_docs(batch_size=BATCH_SIZE)
 
     results: list[NotificationResult] = []
+    updated_doc_refs: list[firestore.DocumentReference] = []
     for doc in pending_docs:
         url = doc.to_dict().get("url")
         if not url:
@@ -360,7 +369,7 @@ def main(request: Any) -> tuple[dict[str, Any], int]:  # noqa: ANN401, ARG001
         print(f"インデックス通知を送信中: {url}")
         success, status_code, message = send_indexing_notification(url, authed_session)
         if success:
-            update_last_sent_timestamp(doc_ref)
+            updated_doc_refs.append(doc_ref)
             results.append(
                 {
                     "url": url,
@@ -379,6 +388,8 @@ def main(request: Any) -> tuple[dict[str, Any], int]:  # noqa: ANN401, ARG001
                 },
             )
         time.sleep(SLEEP_SECONDS)  # API制限緩和のため待機
+
+    update_last_sent_timestamps(updated_doc_refs)
 
     # まとめてメール通知
     has_error = any(r["status"] == "failed" for r in results)

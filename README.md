@@ -89,7 +89,7 @@ python blogger_register/blogger_register.py
 - 新規URL: Firestore登録時に Unix epoch (1970年1月1日) を設定し、優先的に通知されるようにします。
 - 既存URLでlast_sentなし: Unix epoch で初期化します。
 - 既存URLでlast_sentあり: 更新不要のため書き込みを行いません。
-- 通知成功後: 現在時刻に更新され、次回実行時の優先度が下がります。
+- 通知成功後: バッチ終了時にまとめて現在時刻へ更新され、次回実行時の優先度が下がります。
 
 ### エラー時の動作
 
