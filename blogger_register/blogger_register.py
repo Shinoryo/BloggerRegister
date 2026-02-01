@@ -166,7 +166,7 @@ def commit_pending_batch(
     """バッチ書き込みを実行してキャッシュを更新する。
 
     pending_doc_ids が空の場合は書き込みを行わず終了する。
-    pending_doc_ids と has_last_sent はこの関数内で更新される。
+    batch.commit() 後に pending_doc_ids と has_last_sent を更新する。
 
     Args:
         batch (firestore.WriteBatch): 書き込みバッチ
@@ -221,6 +221,7 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
     service = build("blogger", "v3", developerKey=api_key)
     page_token: str | None = None
     batch = db.batch()
+    collection = db.collection("url_notifications")
     # pending_doc_ids はバッチ確定前の重複追加を防ぐために利用
     pending_doc_ids: set[str] = set()
 
@@ -234,7 +235,7 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
 
             last_sent_exists = has_last_sent.get(doc_id, False)
             if not last_sent_exists and doc_id not in pending_doc_ids:
-                doc_ref = db.collection("url_notifications").document(doc_id)
+                doc_ref = collection.document(doc_id)
                 batch.set(
                     doc_ref,
                     {"url": url, "last_sent": INITIAL_TIMESTAMP},
