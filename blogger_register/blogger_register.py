@@ -306,15 +306,20 @@ def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
         ensure_https_url(current_url)
         visited_sitemaps.add(current_url)
         try:
-            response = requests.get(current_url, timeout=30, verify=True)
+            response = requests.get(
+                current_url,
+                timeout=30,
+                verify=True,
+                headers={"User-Agent": "BloggerRegister/1.0 (sitemap fetcher)"},
+            )
             response.raise_for_status()
-        except requests.RequestException as exc:
+        except (requests.RequestException, ValueError) as exc:
             message = f"サイトマップの取得に失敗しました: {current_url}"
             raise RuntimeError(message) from exc
         content = decode_sitemap_content(response.content, current_url)
         try:
             urls, sitemap_urls = extract_sitemap_entries(content)
-        except ElementTree.ParseError as exc:
+        except (ElementTree.ParseError, ValueError) as exc:
             message = f"サイトマップXMLの解析に失敗しました: {current_url}"
             raise RuntimeError(message) from exc
         for url in urls:
