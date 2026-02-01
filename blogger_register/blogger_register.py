@@ -242,11 +242,11 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
                     merge=True,
                 )
                 pending_doc_ids.add(doc_id)
+                print(f"FirestoreにURL登録: {url}")
 
             if len(pending_doc_ids) >= FIRESTORE_BATCH_LIMIT:
                 batch = commit_pending_batch(batch, pending_doc_ids, has_last_sent)
 
-            print(f"FirestoreにURL登録: {url}")
         page_token = posts_response.get("nextPageToken")
         if not page_token:
             break
