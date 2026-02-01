@@ -204,8 +204,8 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
             doc_id = encode_doc_id(url)
             doc_ref = db.collection("url_notifications").document(doc_id)
 
-            last_sent_exists = existing_docs.get(doc_id)
-            if last_sent_exists is not True and doc_id not in pending_last_sent_doc_ids:
+            last_sent_exists = existing_docs.get(doc_id, False)
+            if not last_sent_exists and doc_id not in pending_last_sent_doc_ids:
                 batch.set(
                     doc_ref,
                     {"url": url, "last_sent": INITIAL_TIMESTAMP},
