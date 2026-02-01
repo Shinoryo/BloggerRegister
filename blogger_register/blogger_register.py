@@ -159,10 +159,9 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
                 data = doc.to_dict()
                 if "last_sent" not in data:
                     doc_ref.update({"last_sent": INITIAL_TIMESTAMP})
-                # URLは念のため更新(merge=Trueにより上書きは避ける)  # noqa: ERA001
                 doc_ref.set({"url": url}, merge=True)
             else:
-                # 新規登録時はlast_sentを過去の時刻で初期化(優先的に通知されるようにする)
+                # 新規登録時はlast_sentを過去の時刻で初期化
                 doc_ref.set({"url": url, "last_sent": INITIAL_TIMESTAMP})
 
             print(f"FirestoreにURL登録: {url}")
