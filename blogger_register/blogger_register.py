@@ -165,16 +165,20 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
     service = build("blogger", "v3", developerKey=api_key)
     page_token: str | None = None
     existing_docs = {
-        doc.id: (doc.to_dict() or {})
+        doc.id: "last_sent" in (doc.to_dict() or {})
         for doc in db.collection("url_notifications").select(["last_sent"]).stream()
     }
     batch = db.batch()
     batch_count = 0
+    pending_doc_ids: set[str] = set()
 
     def commit_batch() -> None:
         nonlocal batch, batch_count
         if batch_count > 0:
             batch.commit()
+            for doc_id in pending_doc_ids:
+                existing_docs[doc_id] = True
+            pending_doc_ids.clear()
             batch = db.batch()
             batch_count = 0
 
@@ -187,22 +191,19 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
             doc_id = encode_doc_id(url)
             doc_ref = db.collection("url_notifications").document(doc_id)
 
-            data = existing_docs.get(doc_id)
-            if data is None:
+            last_sent_exists = existing_docs.get(doc_id)
+            if last_sent_exists is None and doc_id not in pending_doc_ids:
                 batch.set(doc_ref, {"url": url, "last_sent": INITIAL_TIMESTAMP})
                 batch_count += 1
-                existing_docs[doc_id] = {
-                    "url": url,
-                    "last_sent": INITIAL_TIMESTAMP,
-                }
-            elif "last_sent" not in data:
+                pending_doc_ids.add(doc_id)
+            elif last_sent_exists is False and doc_id not in pending_doc_ids:
                 batch.set(
                     doc_ref,
                     {"url": url, "last_sent": INITIAL_TIMESTAMP},
                     merge=True,
                 )
                 batch_count += 1
-                data["last_sent"] = INITIAL_TIMESTAMP
+                pending_doc_ids.add(doc_id)
 
             if batch_count >= 500:
                 commit_batch()
