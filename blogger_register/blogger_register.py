@@ -33,6 +33,7 @@ FIRESTORE_BATCH_LIMIT = 500
 INITIAL_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)  # 新規URL用の初期タイムスタンプ
 MIN_NOTIFY_INTERVAL_DAYS: int = 0  # 通知間隔の最小日数(0以下=制限なし)
 MAX_SITEMAP_COUNT = 100
+USER_AGENT = "BloggerRegister/1.0 (sitemap fetcher)"
 
 db = firestore.Client()
 
@@ -300,7 +301,7 @@ def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
         if len(visited_sitemaps) >= MAX_SITEMAP_COUNT:
             message = "サイトマップ取得数が上限を超えたため処理を中断します。"
             raise RuntimeError(message)
-        current_url = pending_sitemaps.pop()
+        current_url = pending_sitemaps.pop(0)
         if current_url in visited_sitemaps:
             continue
         ensure_https_url(current_url)
@@ -310,7 +311,7 @@ def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
                 current_url,
                 timeout=30,
                 verify=True,
-                headers={"User-Agent": "BloggerRegister/1.0 (sitemap fetcher)"},
+                headers={"User-Agent": USER_AGENT},
             )
             response.raise_for_status()
         except (requests.RequestException, ValueError) as exc:
