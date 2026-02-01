@@ -217,8 +217,8 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
         blog_id (str): ブログID
         api_key (str): APIキー
     """
-    # FIRESTORE_BATCH_LIMITは取得・書き込みのページサイズとして共用
     has_last_sent = build_last_sent_cache(FIRESTORE_BATCH_LIMIT)
+
     service = build("blogger", "v3", developerKey=api_key)
     page_token: str | None = None
     batch = db.batch()
