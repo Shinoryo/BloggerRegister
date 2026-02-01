@@ -35,7 +35,7 @@ Bloggerで公開した記事のURLをGoogle Indexing APIに自動通知し、イ
 | SMTP_SERVER | メール送信に利用するSMTPサーバー | "smtp.gmail.com" |
 | SMTP_PORT | SMTPサーバーのポート番号 | 587 |
 | INITIAL_TIMESTAMP | 新規URL登録時のlast_sent初期値 | Unix epoch (1970年1月1日) |
-| MIN_NOTIFY_INTERVAL_DAYS | 通知間隔の最小日数。この日数以内に通知されたURLはバッチ対象から除外される（0=制限なし） | 0 |
+| MIN_NOTIFY_INTERVAL_DAYS | 通知間隔の最小日数。この日数以内に通知されたURLはバッチ対象から除外される（0以下=制限なし） | 0 |
 
 ## 入出力
 
