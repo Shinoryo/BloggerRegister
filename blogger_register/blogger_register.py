@@ -34,7 +34,7 @@ FIRESTORE_BATCH_LIMIT = 500
 INITIAL_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)  # 新規URL用の初期タイムスタンプ
 MIN_NOTIFY_INTERVAL_DAYS: int = 0  # 通知間隔の最小日数(0以下=制限なし)
 MAX_SITEMAP_COUNT = 100  # 過剰なサイトマップ循環取得を防ぐ上限
-USER_AGENT = "BloggerRegister/1.0 (sitemap fetcher)"  # サーバー識別用
+USER_AGENT = "SitemapIndexer/1.0 (sitemap fetcher)"  # サーバー識別用
 
 db = firestore.Client()
 
