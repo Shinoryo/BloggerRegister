@@ -131,11 +131,11 @@ def update_last_sent_timestamp(doc_ref: firestore.DocumentReference) -> None:
     doc_ref.update({"last_sent": firestore.SERVER_TIMESTAMP})
 
 
-def build_last_sent_cache(fetch_batch_size: int) -> dict[str, bool]:
+def build_last_sent_cache(batch_size: int) -> dict[str, bool]:
     """Firestoreからlast_sentの有無をキャッシュする。
 
     Args:
-        fetch_batch_size (int): 1回の取得件数
+        batch_size (int): 1回の取得件数
 
     Returns:
         dict[str, bool]: ドキュメントIDごとのlast_sent有無
@@ -144,7 +144,7 @@ def build_last_sent_cache(fetch_batch_size: int) -> dict[str, bool]:
     base_query = (
         db.collection("url_notifications")
         .order_by("__name__")
-        .limit(fetch_batch_size)
+        .limit(batch_size)
     )
     last_doc = None
     while True:
@@ -162,7 +162,7 @@ def commit_pending_batch(
     batch: firestore.WriteBatch,
     pending_doc_ids: set[str],
     has_last_sent: dict[str, bool],
-) -> None:
+) -> firestore.WriteBatch:
     """バッチ書き込みを実行してキャッシュを更新する。
 
     pending_doc_ids が空の場合は書き込みを行わず終了する。
@@ -174,14 +174,15 @@ def commit_pending_batch(
         has_last_sent (dict[str, bool]): last_sentの存在キャッシュ
 
     Returns:
-        None
+        firestore.WriteBatch: 次のバッチ
     """
     if not pending_doc_ids:
-        return
+        return batch
     batch.commit()
     for doc_id in pending_doc_ids:
         has_last_sent[doc_id] = True
     pending_doc_ids.clear()
+    return db.batch()
 
 
 def send_indexing_notification(
@@ -242,8 +243,7 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
                 pending_doc_ids.add(doc_id)
 
             if len(pending_doc_ids) >= FIRESTORE_BATCH_LIMIT:
-                commit_pending_batch(batch, pending_doc_ids, has_last_sent)
-                batch = db.batch()
+                batch = commit_pending_batch(batch, pending_doc_ids, has_last_sent)
 
             print(f"FirestoreにURL登録: {url}")
         page_token = posts_response.get("nextPageToken")
