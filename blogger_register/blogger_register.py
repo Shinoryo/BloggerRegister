@@ -95,20 +95,24 @@ def get_pending_url_docs(batch_size: int) -> list[firestore.DocumentSnapshot]:
         List[firestore.DocumentSnapshot]: 取得したドキュメントリスト
     """
     # MIN_NOTIFY_INTERVAL_DAYS環境変数を取得(デフォルト: 0 = 制限なし)
-    min_interval_days_str = os.environ.get("MIN_NOTIFY_INTERVAL_DAYS")
-    if min_interval_days_str:
-        try:
-            min_interval_days = int(min_interval_days_str)
-        except ValueError:
+    try:
+        min_interval_days = int(
+            os.environ.get("MIN_NOTIFY_INTERVAL_DAYS", DEFAULT_MIN_NOTIFY_INTERVAL_DAYS)
+        )
+        if min_interval_days < 0:
             print(
-                f"警告: MIN_NOTIFY_INTERVAL_DAYSが無効な値です: {min_interval_days_str}。デフォルト値{DEFAULT_MIN_NOTIFY_INTERVAL_DAYS}を使用します。",  # noqa: E501
+                f"警告: MIN_NOTIFY_INTERVAL_DAYSが負の値です: {min_interval_days}。デフォルト値{DEFAULT_MIN_NOTIFY_INTERVAL_DAYS}を使用します。",  # noqa: E501
             )
             min_interval_days = DEFAULT_MIN_NOTIFY_INTERVAL_DAYS
-    else:
+    except ValueError:
+        min_interval_days_str = os.environ.get("MIN_NOTIFY_INTERVAL_DAYS")
+        print(
+            f"警告: MIN_NOTIFY_INTERVAL_DAYSが無効な値です: {min_interval_days_str}。デフォルト値{DEFAULT_MIN_NOTIFY_INTERVAL_DAYS}を使用します。",  # noqa: E501
+        )
         min_interval_days = DEFAULT_MIN_NOTIFY_INTERVAL_DAYS
 
     # min_interval_daysが0の場合は制限なし(従来の挙動)
-    if min_interval_days <= 0:
+    if min_interval_days == 0:
         docs = (
             db.collection("url_notifications")
             .order_by("last_sent")
