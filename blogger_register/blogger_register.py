@@ -35,9 +35,7 @@ FIRESTORE_BATCH_LIMIT = 500
 INITIAL_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)  # 新規URL用の初期タイムスタンプ
 MIN_NOTIFY_INTERVAL_DAYS: int = 0  # 通知間隔の最小日数(0以下=制限なし)
 MAX_SITEMAP_COUNT = 100  # 過剰なサイトマップ循環取得を防ぐ上限
-USER_AGENT = (
-    "SitemapIndexer/1.0 (https://github.com/Shinoryo/BloggerRegister)"
-)  # Noneの場合はUser-Agentを送信しない
+USER_AGENT = "SitemapIndexer/1.0 (https://github.com/Shinoryo/BloggerRegister)"
 
 db = firestore.Client()
 
@@ -275,8 +273,15 @@ def normalize_sitemap_url(url: str) -> str:
 
     Returns:
         str: 前後空白を除去したURL
+
+    Raises:
+        ValueError: 空文字の場合
     """
-    return url.strip()
+    normalized = url.strip()
+    if not normalized:
+        message = "サイトマップURLが空のため取得できません。"
+        raise ValueError(message)
+    return normalized
 
 
 def extract_sitemap_entries(content: bytes) -> tuple[list[str], list[str]]:
@@ -322,14 +327,12 @@ def fetch_sitemap_content(sitemap_url: str) -> bytes:
     Returns:
         bytes: 取得したコンテンツ
     """
-    if not sitemap_url:
-        message = "サイトマップURLが空のため取得できません。"
-        raise ValueError(message)
-    if not is_https_url(sitemap_url):
-        print(f"警告: HTTPS以外のサイトマップURLを取得します: {sitemap_url}")
+    normalized_url = normalize_sitemap_url(sitemap_url)
+    if not is_https_url(normalized_url):
+        print(f"警告: HTTPS以外のサイトマップURLを取得します: {normalized_url}")
     try:
         response = requests.get(
-            sitemap_url,
+            normalized_url,
             timeout=30,
             verify=certifi.where(),
             headers={"User-Agent": USER_AGENT} if USER_AGENT else {},
