@@ -35,7 +35,7 @@ FIRESTORE_BATCH_LIMIT = 500
 INITIAL_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)  # 新規URL用の初期タイムスタンプ
 MIN_NOTIFY_INTERVAL_DAYS: int = 0  # 通知間隔の最小日数(0以下=制限なし)
 MAX_SITEMAP_COUNT = 100  # 過剰なサイトマップ循環取得を防ぐ上限
-USER_AGENT = "SitemapIndexer/1.0 (sitemap fetcher)"  # サーバー識別用
+USER_AGENT = None
 
 db = firestore.Client()
 
@@ -252,21 +252,6 @@ def decode_sitemap_content(
     return content
 
 
-def ensure_https_url(url: str) -> None:
-    """Sitemap URLがHTTPSかを検証する。
-
-    Args:
-        url (str): 検証対象のURL
-
-    Raises:
-        ValueError: HTTPSではない場合
-    """
-    parsed = urlparse(url)
-    if parsed.scheme.lower() != "https":
-        message = f"HTTPS以外のサイトマップURLは許可されていません: {url}"
-        raise ValueError(message)
-
-
 def is_https_url(url: str) -> bool:
     """URLがHTTPSかどうかを判定する。
 
@@ -280,8 +265,23 @@ def is_https_url(url: str) -> bool:
     return parsed.scheme.lower() == "https"
 
 
+def normalize_sitemap_url(url: str) -> str:
+    """サイトマップURLを正規化する。
+
+    Args:
+        url (str): 正規化対象のURL
+
+    Returns:
+        str: 正規化後のURL
+    """
+    return url.strip()
+
+
 def extract_sitemap_entries(content: bytes) -> tuple[list[str], list[str]]:
     """Sitemap XMLからURLと子Sitemap URLを抽出する。
+
+    - rootが urlset の場合: url/loc から URLリストを取得
+    - rootが sitemapindex の場合: sitemap/loc から 子Sitemap URLを取得
 
     Args:
         content (bytes): XMLコンテンツ
@@ -296,14 +296,14 @@ def extract_sitemap_entries(content: bytes) -> tuple[list[str], list[str]]:
 
     if root.tag.endswith("urlset"):
         urls = [
-            loc.text
+            normalize_sitemap_url(loc.text)
             for loc in root.findall(f".//{namespace}url/{namespace}loc")
             if loc.text
         ]
         return urls, []
     if root.tag.endswith("sitemapindex"):
         sitemap_urls = [
-            loc.text
+            normalize_sitemap_url(loc.text)
             for loc in root.findall(f".//{namespace}sitemap/{namespace}loc")
             if loc.text
         ]
@@ -320,13 +320,15 @@ def fetch_sitemap_content(sitemap_url: str) -> bytes:
     Returns:
         bytes: 取得したコンテンツ
     """
-    ensure_https_url(sitemap_url)
+    if not sitemap_url:
+        message = "サイトマップURLが空のため取得できません。"
+        raise ValueError(message)
     try:
         response = requests.get(
             sitemap_url,
             timeout=30,
             verify=certifi.where(),
-            headers={"User-Agent": USER_AGENT},
+            headers={"User-Agent": USER_AGENT} if USER_AGENT else None,
         )
         response.raise_for_status()
     except requests.SSLError as exc:
@@ -371,7 +373,7 @@ def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
     Returns:
         list[str]: 取得したURL一覧
     """
-    pending_sitemaps = deque([sitemap_url])
+    pending_sitemaps = deque([normalize_sitemap_url(sitemap_url)])
     visited_sitemaps: set[str] = set()
     seen_urls: set[str] = set()
     collected_urls: list[str] = []
@@ -388,7 +390,7 @@ def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
         urls, sitemap_urls = parse_sitemap_content(content, current_url)
         for url in urls:
             if not is_https_url(url):
-                print(f"警告: HTTPS以外のURLをスキップしました: {url}")
+                print(f"警告: HTTPS以外のURLを登録対象外としました: {url}")
                 continue
             if url not in seen_urls:
                 seen_urls.add(url)
