@@ -131,11 +131,11 @@ def update_last_sent_timestamp(doc_ref: firestore.DocumentReference) -> None:
     doc_ref.update({"last_sent": firestore.SERVER_TIMESTAMP})
 
 
-def build_last_sent_cache(batch_size: int) -> dict[str, bool]:
+def build_last_sent_cache(page_size: int) -> dict[str, bool]:
     """Firestoreからlast_sentの有無をキャッシュする。
 
     Args:
-        batch_size (int): 1回の取得件数
+        page_size (int): 1回の取得件数
 
     Returns:
         dict[str, bool]: ドキュメントIDごとのlast_sent有無
@@ -144,7 +144,7 @@ def build_last_sent_cache(batch_size: int) -> dict[str, bool]:
     base_query = (
         db.collection("url_notifications")
         .order_by("__name__")
-        .limit(batch_size)
+        .limit(page_size)
     )
     last_doc = None
     while True:
@@ -251,7 +251,7 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
         if not page_token:
             break
 
-    commit_pending_batch(batch, pending_doc_ids, has_last_sent)
+    batch = commit_pending_batch(batch, pending_doc_ids, has_last_sent)
 
 
 def build_summary_email_body_html(results: list[NotificationResult]) -> str:
