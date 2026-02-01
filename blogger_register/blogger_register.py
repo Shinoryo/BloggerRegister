@@ -162,7 +162,7 @@ def commit_pending_batch(
     batch: firestore.WriteBatch,
     pending_doc_ids: set[str],
     has_last_sent: dict[str, bool],
-) -> firestore.WriteBatch:
+) -> None:
     """バッチ書き込みを実行してキャッシュを更新する。
 
     pending_doc_ids が空の場合は書き込みせず、既存のバッチを返す。
@@ -174,15 +174,14 @@ def commit_pending_batch(
         has_last_sent (dict[str, bool]): last_sentの存在キャッシュ
 
     Returns:
-        firestore.WriteBatch: 次のバッチ
+        None
     """
     if not pending_doc_ids:
-        return batch
+        return
     batch.commit()
     for doc_id in pending_doc_ids:
         has_last_sent[doc_id] = True
     pending_doc_ids.clear()
-    return db.batch()
 
 
 def send_indexing_notification(
@@ -243,14 +242,15 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
                 pending_doc_ids.add(doc_id)
 
             if len(pending_doc_ids) >= FIRESTORE_BATCH_LIMIT:
-                batch = commit_pending_batch(batch, pending_doc_ids, has_last_sent)
+                commit_pending_batch(batch, pending_doc_ids, has_last_sent)
+                batch = db.batch()
 
             print(f"FirestoreにURL登録: {url}")
         page_token = posts_response.get("nextPageToken")
         if not page_token:
             break
 
-    batch = commit_pending_batch(batch, pending_doc_ids, has_last_sent)
+    commit_pending_batch(batch, pending_doc_ids, has_last_sent)
 
 
 def build_summary_email_body_html(results: list[NotificationResult]) -> str:
