@@ -33,7 +33,7 @@ Bloggerで公開した記事のURLをGoogle Indexing APIに自動通知し、イ
 | BATCH_SIZE | 1回のバッチで通知するURLの最大件数 | 5 |
 | SLEEP_SECONDS | 1件ごとに通知後の待機秒数（API制限緩和用） | 10 |
 | SMTP_SERVER | メール送信に利用するSMTPサーバー | "smtp.gmail.com" |
-| SMTP_PORT | SMTPサーバーのポート番号 | 587 |
+| SMTP_PORT | SMTPサーバーのポート番号 | 587 || INITIAL_TIMESTAMP | 新規URL登録時のlast_sent初期値 | Unix epoch (1970年1月1日)  |
 
 ## 入出力
 
@@ -54,9 +54,9 @@ Bloggerで公開した記事のURLをGoogle Indexing APIに自動通知し、イ
 - ドキュメントID: URLをBase64エンコードした文字列
 - フィールド:
   - `url`: 記事URL
-  - `last_sent`: 最終通知日時（サーバータイムスタンプ）
+  - `last_sent`: 最終通知日時(タイムスタンプ)
 
-新規に取得したURLはFirestoreへ登録時、`last_sent` フィールドにサーバータイムスタンプ（現在時刻）が自動的に設定されます。
+新規に取得したURLはFirestoreへ登録時、`last_sent` フィールドに Unix epoch (1970年1月1日) が設定されます。これにより、新規記事が優先的に通知されるようになります。通知送信成功後は `last_sent` が現在時刻に更新され、次回実行時の優先度が下がります。
 
 ## 実行方法
 
@@ -72,7 +72,7 @@ python blogger_register/blogger_register.py
 
 1. 環境変数から各種設定値を取得（未設定の場合はエラー出力し処理中断）
 2. Google認証セッションを初期化
-3. Blogger APIから記事URL一覧をFirestoreに登録（新規URLはlast_sentに現在時刻を設定）
+3. Blogger APIから記事URL一覧をFirestoreに登録(新規URLはlast_sentをUnix epoch (1970年1月1日) で初期化し、優先的に通知されるようにする)
 4. Firestoreから通知日時が古い順に指定件数だけURLを抽出
 5. Google Indexing APIへ通知し、結果をFirestoreに反映（APIエラー時は標準出力にエラー内容を出力し、処理は継続）
 6. 全通知結果をHTMLメールで送信（メール送信失敗時は標準出力にエラー内容を出力する）
