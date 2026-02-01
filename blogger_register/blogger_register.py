@@ -173,7 +173,7 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
     pending_doc_ids: set[str] = set()
 
     def commit_batch() -> None:
-        nonlocal batch, batch_count
+        nonlocal batch, batch_count, pending_doc_ids
         if batch_count > 0:
             batch.commit()
             for doc_id in pending_doc_ids:
