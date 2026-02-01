@@ -233,7 +233,11 @@ def decode_sitemap_content(content: bytes, url: str) -> bytes:
         bytes: デコード済みのSitemap
     """
     if url.lower().endswith(".gz"):
-        return gzip.decompress(content)
+        try:
+            return gzip.decompress(content)
+        except OSError as exc:
+            message = f"サイトマップの解凍に失敗しました: {url}"
+            raise RuntimeError(message) from exc
     return content
 
 
@@ -338,7 +342,7 @@ def parse_sitemap_content(
     """
     try:
         return extract_sitemap_entries(content)
-    except (DefusedElementTree.ParseError, ValueError) as exc:
+    except (DefusedElementTree.ParseError, ValueError, UnicodeError) as exc:
         message = f"サイトマップXMLの解析に失敗しました: {sitemap_url}"
         raise RuntimeError(message) from exc
 
