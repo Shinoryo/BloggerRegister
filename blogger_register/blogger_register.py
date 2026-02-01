@@ -9,6 +9,7 @@ import gzip
 import os
 import smtplib
 import time
+from collections import deque
 from datetime import UTC, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -222,7 +223,11 @@ def send_indexing_notification(
     return success, response.status_code, response.text
 
 
-def decode_sitemap_content(content: bytes, url: str) -> bytes:
+def decode_sitemap_content(
+    content: bytes,
+    url: str,
+    content_encoding: str | None = None,
+) -> bytes:
     """Sitemapコンテンツを必要に応じてデコードする。
 
     Args:
@@ -232,6 +237,12 @@ def decode_sitemap_content(content: bytes, url: str) -> bytes:
     Returns:
         bytes: デコード済みのSitemap
     """
+    if content_encoding and "gzip" in content_encoding.lower():
+        try:
+            return gzip.decompress(content)
+        except OSError as exc:
+            message = f"サイトマップの解凍に失敗しました: {url}"
+            raise RuntimeError(message) from exc
     if url.lower().endswith(".gz"):
         try:
             return gzip.decompress(content)
@@ -324,7 +335,11 @@ def fetch_sitemap_content(sitemap_url: str) -> bytes:
     except (requests.RequestException, ValueError) as exc:
         message = f"サイトマップの取得に失敗しました: {sitemap_url}"
         raise RuntimeError(message) from exc
-    return decode_sitemap_content(response.content, sitemap_url)
+    return decode_sitemap_content(
+        response.content,
+        sitemap_url,
+        response.headers.get("Content-Encoding"),
+    )
 
 
 def parse_sitemap_content(
@@ -356,13 +371,13 @@ def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
     Returns:
         list[str]: 取得したURL一覧
     """
-    pending_sitemaps = [sitemap_url]
+    pending_sitemaps = deque([sitemap_url])
     visited_sitemaps: set[str] = set()
     seen_urls: set[str] = set()
     collected_urls: list[str] = []
 
     while pending_sitemaps:
-        current_url = pending_sitemaps.pop(0)
+        current_url = pending_sitemaps.popleft()
         if current_url in visited_sitemaps:
             continue
         if len(visited_sitemaps) >= MAX_SITEMAP_COUNT:
@@ -373,7 +388,7 @@ def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
         urls, sitemap_urls = parse_sitemap_content(content, current_url)
         for url in urls:
             if not is_https_url(url):
-                print(f"HTTPS以外のURLをスキップしました: {url}")
+                print(f"警告: HTTPS以外のURLをスキップしました: {url}")
                 continue
             if url not in seen_urls:
                 seen_urls.add(url)
