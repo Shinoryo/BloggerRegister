@@ -35,7 +35,9 @@ FIRESTORE_BATCH_LIMIT = 500
 INITIAL_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)  # 新規URL用の初期タイムスタンプ
 MIN_NOTIFY_INTERVAL_DAYS: int = 0  # 通知間隔の最小日数(0以下=制限なし)
 MAX_SITEMAP_COUNT = 100  # 過剰なサイトマップ循環取得を防ぐ上限
-USER_AGENT = None  # Noneの場合はUser-Agentを送信しない
+USER_AGENT = (
+    "SitemapIndexer/1.0 (https://github.com/Shinoryo/BloggerRegister)"
+)  # Noneの場合はUser-Agentを送信しない
 
 db = firestore.Client()
 
@@ -323,6 +325,8 @@ def fetch_sitemap_content(sitemap_url: str) -> bytes:
     if not sitemap_url:
         message = "サイトマップURLが空のため取得できません。"
         raise ValueError(message)
+    if not is_https_url(sitemap_url):
+        print(f"警告: HTTPS以外のサイトマップURLを取得します: {sitemap_url}")
     try:
         response = requests.get(
             sitemap_url,
