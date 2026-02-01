@@ -8,6 +8,7 @@ import base64
 import os
 import smtplib
 import time
+from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, TypedDict
@@ -25,6 +26,7 @@ SLEEP_SECONDS: int = 10  # API制限緩和のための待機時間(秒)
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 HTTP_STATUS_OK = 200
+INITIAL_TIMESTAMP = datetime(1970, 1, 1)  # 新規URL用の初期タイムスタンプ
 
 db = firestore.Client()
 
@@ -156,12 +158,12 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
                 # 既存ドキュメントにlast_sentがなければ初期化
                 data = doc.to_dict()
                 if "last_sent" not in data:
-                    doc_ref.update({"last_sent": firestore.SERVER_TIMESTAMP})
+                    doc_ref.update({"last_sent": INITIAL_TIMESTAMP})
                 # URLは念のため更新(merge=Trueにより上書きは避ける)  # noqa: ERA001
                 doc_ref.set({"url": url}, merge=True)
             else:
-                # 新規登録時はlast_sentも初期化して登録
-                doc_ref.set({"url": url, "last_sent": firestore.SERVER_TIMESTAMP})
+                # 新規登録時はlast_sentを過去の時刻で初期化(優先的に通知されるようにする)
+                doc_ref.set({"url": url, "last_sent": INITIAL_TIMESTAMP})
 
             print(f"FirestoreにURL登録: {url}")
         page_token = posts_response.get("nextPageToken")
