@@ -266,7 +266,7 @@ def is_https_url(url: str) -> bool:
 
 
 def normalize_sitemap_url(url: str) -> str:
-    """サイトマップURLの前後空白を除去する。
+    """サイトマップURLの前後空白を除去し、空なら例外を投げる。
 
     Args:
         url (str): 正規化対象のURL
@@ -287,8 +287,9 @@ def normalize_sitemap_url(url: str) -> str:
 def extract_sitemap_entries(content: bytes) -> tuple[list[str], list[str]]:
     """Sitemap XMLからURLと子Sitemap URLを抽出する。
 
-    - rootが urlset の場合: url/loc から URLリストを取得
-    - rootが sitemapindex の場合: sitemap/loc から 子Sitemap URLを取得
+    - rootが urlset の場合: url/loc からURLリストを取得
+    - rootが sitemapindex の場合: sitemap/loc から子Sitemap URLを取得
+    - URLは前後空白を除去し、空の値は除外する
 
     Args:
         content (bytes): XMLコンテンツ
