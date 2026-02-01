@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 import google.auth
 import requests
-from defusedxml import ElementTree
+from defusedxml import ElementTree as DefusedElementTree
 from google.auth.transport.requests import AuthorizedSession
 from google.cloud import firestore
 
@@ -260,10 +260,10 @@ def extract_sitemap_entries(content: bytes) -> tuple[list[str], list[str]]:
     Returns:
         tuple[list[str], list[str]]: (URLリスト, 子Sitemap URLリスト)
     """
-    root = ElementTree.fromstring(content)
+    root = DefusedElementTree.fromstring(content)
     namespace = ""
     if root.tag.startswith("{"):
-        namespace = root.tag.split("}")[0] + "}"
+        namespace = root.tag.partition("}")[0] + "}"
 
     if root.tag.endswith("urlset"):
         urls = [
@@ -320,7 +320,7 @@ def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
         content = decode_sitemap_content(response.content, current_url)
         try:
             urls, sitemap_urls = extract_sitemap_entries(content)
-        except (ElementTree.ParseError, ValueError) as exc:
+        except (DefusedElementTree.ParseError, ValueError) as exc:
             message = f"サイトマップXMLの解析に失敗しました: {current_url}"
             raise RuntimeError(message) from exc
         for url in urls:
