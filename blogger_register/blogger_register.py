@@ -183,15 +183,16 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
         last_doc = docs[-1]
     batch = db.batch()
     batch_count = 0
-    pending_last_sent_doc_ids: set[str] = set()
+    # pending_doc_idsは同じドキュメントの重複追加を防ぐために利用
+    pending_doc_ids: set[str] = set()
 
     def commit_batch() -> None:
-        nonlocal batch, batch_count, pending_last_sent_doc_ids
+        nonlocal batch, batch_count, pending_doc_ids
         if batch_count > 0:
             batch.commit()
-            for doc_id in pending_last_sent_doc_ids:
+            for doc_id in pending_doc_ids:
                 existing_docs[doc_id] = True
-            pending_last_sent_doc_ids.clear()
+            pending_doc_ids.clear()
             batch = db.batch()
             batch_count = 0
 
@@ -207,7 +208,7 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
             last_sent_exists = existing_docs.get(doc_id, False)
             if (
                 not last_sent_exists
-                and doc_id not in pending_last_sent_doc_ids
+                and doc_id not in pending_doc_ids
             ):
                 batch.set(
                     doc_ref,
@@ -215,9 +216,8 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
                     merge=True,
                 )
                 batch_count += 1
-                pending_last_sent_doc_ids.add(doc_id)
+                pending_doc_ids.add(doc_id)
 
-            # pending_last_sent_doc_idsは同じドキュメントの重複追加を防ぐために利用
             if batch_count >= firestore_batch_limit:
                 commit_batch()
 
