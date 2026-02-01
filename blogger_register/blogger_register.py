@@ -5,6 +5,7 @@ Licensed under the MIT License
 """
 
 import base64
+import gzip
 import os
 import smtplib
 import time
@@ -12,11 +13,12 @@ from datetime import UTC, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, TypedDict
+from xml.etree import ElementTree as ET
 
 import google.auth
+import requests
 from google.auth.transport.requests import AuthorizedSession
 from google.cloud import firestore
-from googleapiclient.discovery import build
 
 # 定数定義
 SCOPES: list[str] = ["https://www.googleapis.com/auth/indexing"]
@@ -34,8 +36,7 @@ db = firestore.Client()
 
 
 class EnvVars(TypedDict):
-    blogger_api_key: str
-    blog_id: str
+    sitemap_url: str
     mail_from: str
     mail_password: str
     mail_to: str
@@ -58,8 +59,7 @@ def get_env_vars() -> EnvVars:
         EnvironmentError: 必須環境変数が未設定の場合
     """
     env = {
-        "blogger_api_key": os.environ.get("BLOGGER_INDEX_REGIST_API_KEY"),
-        "blog_id": os.environ.get("BLOG_ID"),
+        "sitemap_url": os.environ.get("SITEMAP_URL"),
         "mail_from": os.environ.get("MAIL_FROM"),
         "mail_password": os.environ.get("MAIL_PASSWORD"),
         "mail_to": os.environ.get("MAIL_TO"),
@@ -218,49 +218,118 @@ def send_indexing_notification(
     return success, response.status_code, response.text
 
 
-def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
-    """Blogger APIからブログ投稿URL一覧を取得し、Firestoreに登録する。
+def decode_sitemap_content(content: bytes, url: str) -> bytes:
+    """Sitemapコンテンツを必要に応じてデコードする。
 
     Args:
-        blog_id (str): ブログID
-        api_key (str): APIキー
+        content (bytes): 取得したSitemapのバイト列
+        url (str): SitemapのURL
+
+    Returns:
+        bytes: デコード済みのSitemap
+    """
+    if url.lower().endswith(".gz"):
+        return gzip.decompress(content)
+    return content
+
+
+def extract_sitemap_entries(content: bytes) -> tuple[list[str], list[str]]:
+    """Sitemap XMLからURLと子Sitemap URLを抽出する。
+
+    Args:
+        content (bytes): XMLコンテンツ
+
+    Returns:
+        tuple[list[str], list[str]]: (URLリスト, 子Sitemap URLリスト)
+    """
+    root = ET.fromstring(content)  # noqa: S314
+    namespace = ""
+    if root.tag.startswith("{"):
+        namespace = root.tag.split("}")[0] + "}"
+
+    if root.tag.endswith("urlset"):
+        urls = [
+            loc.text.strip()
+            for loc in root.findall(f".//{namespace}url/{namespace}loc")
+            if loc.text
+        ]
+        return urls, []
+    if root.tag.endswith("sitemapindex"):
+        sitemap_urls = [
+            loc.text.strip()
+            for loc in root.findall(f".//{namespace}sitemap/{namespace}loc")
+            if loc.text
+        ]
+        return [], sitemap_urls
+    return [], []
+
+
+def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
+    """サイトマップからURL一覧を取得する。
+
+    Args:
+        sitemap_url (str): 取得対象のサイトマップURL
+
+    Returns:
+        list[str]: 取得したURL一覧
+    """
+    pending_sitemaps = [sitemap_url]
+    visited_sitemaps: set[str] = set()
+    seen_urls: set[str] = set()
+    collected_urls: list[str] = []
+
+    while pending_sitemaps:
+        current_url = pending_sitemaps.pop()
+        if current_url in visited_sitemaps:
+            continue
+        visited_sitemaps.add(current_url)
+        response = requests.get(current_url, timeout=30)
+        response.raise_for_status()
+        content = decode_sitemap_content(response.content, current_url)
+        urls, sitemap_urls = extract_sitemap_entries(content)
+        for url in urls:
+            if url not in seen_urls:
+                seen_urls.add(url)
+                collected_urls.append(url)
+        pending_sitemaps.extend(
+            [
+                child_url
+                for child_url in sitemap_urls
+                if child_url not in visited_sitemaps
+            ],
+        )
+
+    return collected_urls
+
+
+def register_sitemap_urls_to_firestore(sitemap_url: str) -> None:
+    """サイトマップからURL一覧を取得し、Firestoreに登録する。
+
+    Args:
+        sitemap_url (str): サイトマップURL
     """
     has_last_sent = build_last_sent_cache(FIRESTORE_BATCH_LIMIT)
-
-    service = build("blogger", "v3", developerKey=api_key)
-    page_token: str | None = None
     batch = db.batch()
     # pending_doc_ids はバッチ確定前の重複追加を防ぐために利用
     pending_doc_ids: set[str] = set()
 
-    while True:
-        posts_response: dict[str, Any] = (
-            service.posts().list(blogId=blog_id, pageToken=page_token).execute()
-        )
-        for post in posts_response.get("items", []):
-            url: str | None = post.get("url")
-            if not url:
-                # URL フィールドが存在しない投稿はスキップ
-                continue
-            doc_id = encode_doc_id(url)
+    sitemap_urls = fetch_sitemap_urls(sitemap_url)
+    for url in sitemap_urls:
+        doc_id = encode_doc_id(url)
 
-            last_sent_exists = has_last_sent.get(doc_id, False)
-            if not last_sent_exists and doc_id not in pending_doc_ids:
-                doc_ref = db.collection("url_notifications").document(doc_id)
-                batch.set(
-                    doc_ref,
-                    {"url": url, "last_sent": INITIAL_TIMESTAMP},
-                    merge=True,
-                )
-                pending_doc_ids.add(doc_id)
-                print(f"FirestoreにURL登録: {url}")
+        last_sent_exists = has_last_sent.get(doc_id, False)
+        if not last_sent_exists and doc_id not in pending_doc_ids:
+            doc_ref = db.collection("url_notifications").document(doc_id)
+            batch.set(
+                doc_ref,
+                {"url": url, "last_sent": INITIAL_TIMESTAMP},
+                merge=True,
+            )
+            pending_doc_ids.add(doc_id)
+            print(f"FirestoreにURL登録: {url}")
 
-            if len(pending_doc_ids) >= FIRESTORE_BATCH_LIMIT:
-                batch = commit_pending_batch(batch, pending_doc_ids, has_last_sent)
-
-        page_token = posts_response.get("nextPageToken")
-        if not page_token:
-            break
+        if len(pending_doc_ids) >= FIRESTORE_BATCH_LIMIT:
+            batch = commit_pending_batch(batch, pending_doc_ids, has_last_sent)
 
     batch = commit_pending_batch(batch, pending_doc_ids, has_last_sent)
 
@@ -326,7 +395,7 @@ def build_summary_email_body_html(results: list[NotificationResult]) -> str:
 
 def main(request: Any) -> tuple[dict[str, Any], int]:  # noqa: ANN401, ARG001
     """Cloud Functionsのエントリポイント。
-    Blogger APIからURLを取得しFirestoreに登録後、未送信・古い通知をAPIに送信し更新する。
+    サイトマップからURLを取得しFirestoreに登録後、未送信・古い通知をAPIに送信し更新する。
 
     Args:
         request (Any): HTTPリクエストオブジェクト(Cloud Functions仕様)
@@ -347,12 +416,9 @@ def main(request: Any) -> tuple[dict[str, Any], int]:  # noqa: ANN401, ARG001
     authed_session = AuthorizedSession(credentials)
     print(f"認証セッションの取得に成功しました。スコープ: {SCOPES}")
 
-    # Blogger APIからURL一覧をFirestoreに登録
-    print("Blogger APIからURL一覧を取得し、Firestoreに登録します。")
-    register_blog_urls_to_firestore(
-        blog_id=env["blog_id"],
-        api_key=env["blogger_api_key"],
-    )
+    # サイトマップからURL一覧をFirestoreに登録
+    print("サイトマップからURL一覧を取得し、Firestoreに登録します。")
+    register_sitemap_urls_to_firestore(env["sitemap_url"])
 
     # Firestoreから送信待ちURLを取得
     print(f"Firestoreから送信待ちのURLを最大{BATCH_SIZE}件取得します。")

@@ -4,11 +4,11 @@
 
 ### 背景・目的
 
-Bloggerで公開した記事のURLをGoogle Indexing APIに自動通知し、インデックス登録作業を自動化するためのバッチプログラムです。Firestoreで各URLの通知日時を管理し、結果をメールで通知します。
+サイトマップから取得した記事URLをGoogle Indexing APIに自動通知し、インデックス登録作業を自動化するためのバッチプログラムです。Firestoreで各URLの通知日時を管理し、結果をメールで通知します。
 
 ### 機能一覧
 
-- Blogger APIから全記事URLを取得し、FirestoreのURLを事前取得したキャッシュと突き合わせて登録・管理します。
+- サイトマップから全記事URLを取得し、FirestoreのURLを事前取得したキャッシュと突き合わせて登録・管理します。
 - Firestoreで各URLの通知日時を管理し、通知日時が古い順に指定件数だけURLを抽出してGoogle Indexing APIへ通知します。
 - 通知結果をHTML形式でまとめ、指定アドレスへメール送信します。
 - 各種設定値は環境変数で管理します。
@@ -18,8 +18,7 @@ Bloggerで公開した記事のURLをGoogle Indexing APIに自動通知し、イ
 
 | 変数名 | 用途 |
 | ---- | ---- |
-| BLOGGER_INDEX_REGIST_API_KEY | Blogger APIキー |
-| BLOG_ID | 対象ブログのID |
+| SITEMAP_URL | サイトマップURL（通常は sitemap.xml など） |
 | MAIL_FROM | 送信元メールアドレス（Gmail） |
 | MAIL_PASSWORD | 送信元メールアドレスのアプリパスワード |
 | MAIL_TO | 通知先メールアドレス |
@@ -42,7 +41,7 @@ Bloggerで公開した記事のURLをGoogle Indexing APIに自動通知し、イ
 
 ### 入力
 
-- Blogger APIから取得した記事URL
+- サイトマップから取得した記事URL
 - Firestoreコレクション `url_notifications`
 
 ### 出力
@@ -73,7 +72,7 @@ python blogger_register/blogger_register.py
 
 1. 環境変数から各種設定値を取得
 2. Google認証セッションを初期化
-3. Blogger APIから記事URL一覧をFirestoreに登録
+3. サイトマップから記事URL一覧をFirestoreに登録
 4. Firestoreから通知日時が古い順に指定件数だけURLを抽出
 5. Google Indexing APIへ通知し、結果をFirestoreに反映
 6. 全通知結果をHTMLメールで送信
