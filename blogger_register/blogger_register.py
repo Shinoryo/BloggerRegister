@@ -6,6 +6,7 @@ Licensed under the MIT License
 
 import base64
 import gzip
+import logging
 import os
 import smtplib
 import time
@@ -37,6 +38,7 @@ MIN_NOTIFY_INTERVAL_DAYS: int = 0  # 通知間隔の最小日数(0以下=制限�
 MAX_SITEMAP_COUNT = 100  # 過剰なサイトマップ循環取得を防ぐ上限
 USER_AGENT = "SitemapIndexer/1.0 (https://github.com/Shinoryo/BloggerRegister)"
 
+logger = logging.getLogger(__name__)
 db = firestore.Client()
 
 
@@ -268,6 +270,8 @@ def is_https_url(url: str) -> bool:
 def normalize_sitemap_url(url: str) -> str:
     """サイトマップURLの前後空白を除去し、空なら例外を投げる。
 
+    HTTPSの検証は呼び出し元で行う。
+
     Args:
         url (str): 正規化対象のURL
 
@@ -336,7 +340,7 @@ def fetch_sitemap_content(sitemap_url: str) -> bytes:
     """
     normalized_url = normalize_sitemap_url(sitemap_url)
     if not is_https_url(normalized_url):
-        print(f"警告: HTTPS以外のサイトマップURLを取得します: {normalized_url}")
+        logger.warning("HTTPS以外のサイトマップURLを取得します: %s", normalized_url)
     try:
         response = requests.get(
             normalized_url,
@@ -404,7 +408,7 @@ def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
         urls, sitemap_urls = parse_sitemap_content(content, current_url)
         for url in urls:
             if not is_https_url(url):
-                print(f"警告: HTTPS以外のURLを登録対象外としました: {url}")
+                logger.warning("HTTPS以外のURLを登録対象外としました: %s", url)
                 continue
             if url not in seen_urls:
                 seen_urls.add(url)
