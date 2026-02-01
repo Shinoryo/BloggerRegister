@@ -33,7 +33,8 @@ Bloggerで公開した記事のURLをGoogle Indexing APIに自動通知し、イ
 | BATCH_SIZE | 1回のバッチで通知するURLの最大件数 | 5 |
 | SLEEP_SECONDS | 1件ごとに通知後の待機秒数（API制限緩和用） | 10 |
 | SMTP_SERVER | メール送信に利用するSMTPサーバー | "smtp.gmail.com" |
-| SMTP_PORT | SMTPサーバーのポート番号 | 587 || INITIAL_TIMESTAMP | 新規URL登録時のlast_sent初期値 | Unix epoch (1970年1月1日)  |
+| SMTP_PORT | SMTPサーバーのポート番号 | 587 |
+| INITIAL_TIMESTAMP | 新規URL登録時のlast_sent初期値 | Unix epoch (1970年1月1日) |
 
 ## 入出力
 
