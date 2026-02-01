@@ -173,6 +173,7 @@ def commit_pending_batch(
     Returns:
         firestore.WriteBatch: 次のバッチ
     """
+    # pending_doc_ids が空の場合は書き込み不要なためそのまま返す
     if not pending_doc_ids:
         return batch
     batch.commit()
@@ -247,7 +248,7 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
         if not page_token:
             break
 
-    commit_pending_batch(batch, pending_doc_ids, has_last_sent)
+    batch = commit_pending_batch(batch, pending_doc_ids, has_last_sent)
 
 
 def build_summary_email_body_html(results: list[NotificationResult]) -> str:
