@@ -230,7 +230,10 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
             service.posts().list(blogId=blog_id, pageToken=page_token).execute()
         )
         for post in posts_response.get("items", []):
-            url: str = post["url"]
+            url: str | None = post.get("url")
+            if not url:
+                # URL フィールドが存在しない投稿はスキップ
+                continue
             doc_id = encode_doc_id(url)
 
             last_sent_exists = has_last_sent.get(doc_id, False)
