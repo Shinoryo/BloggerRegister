@@ -35,7 +35,7 @@ FIRESTORE_BATCH_LIMIT = 500
 INITIAL_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)  # 新規URL用の初期タイムスタンプ
 MIN_NOTIFY_INTERVAL_DAYS: int = 0  # 通知間隔の最小日数(0以下=制限なし)
 MAX_SITEMAP_COUNT = 100  # 過剰なサイトマップ循環取得を防ぐ上限
-USER_AGENT = None
+USER_AGENT = None  # Noneの場合はUser-Agentを送信しない
 
 db = firestore.Client()
 
@@ -266,13 +266,13 @@ def is_https_url(url: str) -> bool:
 
 
 def normalize_sitemap_url(url: str) -> str:
-    """サイトマップURLを正規化する。
+    """サイトマップURLの前後空白を除去する。
 
     Args:
         url (str): 正規化対象のURL
 
     Returns:
-        str: 正規化後のURL
+        str: 前後空白を除去したURL
     """
     return url.strip()
 
@@ -328,7 +328,7 @@ def fetch_sitemap_content(sitemap_url: str) -> bytes:
             sitemap_url,
             timeout=30,
             verify=certifi.where(),
-            headers={"User-Agent": USER_AGENT} if USER_AGENT else None,
+            headers={"User-Agent": USER_AGENT} if USER_AGENT else {},
         )
         response.raise_for_status()
     except requests.SSLError as exc:
