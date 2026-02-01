@@ -165,10 +165,10 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
     service = build("blogger", "v3", developerKey=api_key)
     page_token: str | None = None
     existing_docs: dict[str, bool] = {}
-    fetch_batch_size = 500
+    firestore_batch_limit = 500
+    fetch_batch_size = firestore_batch_limit
     base_query = (
         db.collection("url_notifications")
-        .select(["last_sent"])
         .order_by("__name__")
         .limit(fetch_batch_size)
     )
@@ -179,7 +179,7 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
         if not docs:
             break
         for doc in docs:
-            existing_docs[doc.id] = "last_sent" in (doc.to_dict() or {})
+            existing_docs[doc.id] = (doc.to_dict() or {}).get("last_sent") is not None
         last_doc = docs[-1]
     batch = db.batch()
     batch_count = 0
@@ -214,7 +214,8 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
                 batch_count += 1
                 pending_last_sent_doc_ids.add(doc_id)
 
-            if batch_count >= 500:
+            # pending_last_sent_doc_idsは同じドキュメントを重複して追加しないために利用
+            if batch_count >= firestore_batch_limit:
                 commit_batch()
 
             print(f"FirestoreにURL登録: {url}")
