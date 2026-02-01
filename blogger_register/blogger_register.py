@@ -1,4 +1,10 @@
-﻿import base64
+﻿"""blogger_register.py
+
+Copyright (c) 2026 Shinoryo
+Licensed under the MIT License
+"""
+
+import base64
 import os
 import smtplib
 import time
