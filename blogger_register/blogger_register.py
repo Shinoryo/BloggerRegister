@@ -8,7 +8,7 @@ import base64
 import os
 import smtplib
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, TypedDict
@@ -26,7 +26,7 @@ SLEEP_SECONDS: int = 10  # API制限緩和のための待機時間(秒)
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 HTTP_STATUS_OK = 200
-INITIAL_TIMESTAMP = datetime(1970, 1, 1)  # 新規URL用の初期タイムスタンプ
+INITIAL_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)  # 新規URL用の初期タイムスタンプ
 
 db = firestore.Client()
 
