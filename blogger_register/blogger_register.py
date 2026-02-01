@@ -302,18 +302,24 @@ def extract_sitemap_entries(content: bytes) -> tuple[list[str], list[str]]:
         namespace = root.tag.partition("}")[0] + "}"
 
     if root.tag.endswith("urlset"):
-        urls = [
-            normalize_sitemap_url(loc.text)
-            for loc in root.findall(f".//{namespace}url/{namespace}loc")
-            if loc.text
-        ]
+        urls: list[str] = []
+        for loc in root.findall(f".//{namespace}url/{namespace}loc"):
+            if not loc.text:
+                continue
+            try:
+                urls.append(normalize_sitemap_url(loc.text))
+            except ValueError:
+                continue
         return urls, []
     if root.tag.endswith("sitemapindex"):
-        sitemap_urls = [
-            normalize_sitemap_url(loc.text)
-            for loc in root.findall(f".//{namespace}sitemap/{namespace}loc")
-            if loc.text
-        ]
+        sitemap_urls: list[str] = []
+        for loc in root.findall(f".//{namespace}sitemap/{namespace}loc"):
+            if not loc.text:
+                continue
+            try:
+                sitemap_urls.append(normalize_sitemap_url(loc.text))
+            except ValueError:
+                continue
         return [], sitemap_urls
     return [], []
 
@@ -335,7 +341,7 @@ def fetch_sitemap_content(sitemap_url: str) -> bytes:
             normalized_url,
             timeout=30,
             verify=certifi.where(),
-            headers={"User-Agent": USER_AGENT} if USER_AGENT else {},
+            headers={"User-Agent": USER_AGENT},
         )
         response.raise_for_status()
     except requests.SSLError as exc:
