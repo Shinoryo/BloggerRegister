@@ -24,6 +24,12 @@ Bloggerで公開した記事のURLをGoogle Indexing APIに自動通知し、イ
 | MAIL_PASSWORD | 送信元メールアドレスのアプリパスワード |
 | MAIL_TO | 通知先メールアドレス |
 
+## オプション環境変数
+
+| 変数名 | 用途 | デフォルト値 |
+| ---- | ---- | ---- |
+| MIN_NOTIFY_INTERVAL_DAYS | 通知間隔の最小日数。この日数以内に通知されたURLはバッチ対象から除外される（0=制限なし） | 0 |
+
 ## 変更可能な定数
 
 `blogger_register.py` 冒頭で定義されています。用途に応じて値を調整してください。
@@ -35,6 +41,7 @@ Bloggerで公開した記事のURLをGoogle Indexing APIに自動通知し、イ
 | SMTP_SERVER | メール送信に利用するSMTPサーバー | "smtp.gmail.com" |
 | SMTP_PORT | SMTPサーバーのポート番号 | 587 |
 | INITIAL_TIMESTAMP | 新規URL登録時のlast_sent初期値 | Unix epoch (1970年1月1日) |
+| DEFAULT_MIN_NOTIFY_INTERVAL_DAYS | 通知間隔の最小日数のデフォルト値（環境変数未設定時） | 0 |
 
 ## 入出力
 
@@ -80,6 +87,7 @@ python blogger_register/blogger_register.py
    - 既存URLでlast_sentが欠けている場合も同様に初期化
    - 既存URLでlast_sentが存在する場合は更新不要（Firestore書き込みコスト最適化）
 4. Firestoreから通知日時が古い順に指定件数だけURLを抽出
+   - MIN_NOTIFY_INTERVAL_DAYS環境変数が設定されている場合、指定日数以内に通知されたURLは除外される
 5. Google Indexing APIへ通知し、結果をFirestoreに反映（APIエラー時は標準出力にエラー内容を出力し、処理は継続）
 6. 全通知結果をHTMLメールで送信（メール送信失敗時は標準出力にエラー内容を出力する）
 
