@@ -26,7 +26,7 @@ Bloggerで公開した記事のURLをGoogle Indexing APIに自動通知し、イ
 
 ## 変更可能な定数
 
-main.py 冒頭で定義されています。用途に応じて値を調整してください。
+`blogger_register.py` 冒頭で定義されています。用途に応じて値を調整してください。
 
 | 定数名 | 用途 | デフォルト値 |
 | ---- | ---- | ---- |
@@ -63,7 +63,7 @@ main.py 冒頭で定義されています。用途に応じて値を調整して
 Google Cloud Functions等のサーバーレス環境での実行を想定していますが、ローカル実行も可能です。
 
 ```bash
-python main.py
+python blogger_register/blogger_register.py
 ```
 
 ※必要な環境変数を事前に設定してください。
