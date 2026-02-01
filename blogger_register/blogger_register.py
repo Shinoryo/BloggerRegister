@@ -94,7 +94,7 @@ def get_pending_url_docs(batch_size: int) -> list[firestore.DocumentSnapshot]:
     Returns:
         List[firestore.DocumentSnapshot]: 取得したドキュメントリスト
     """
-    # MIN_NOTIFY_INTERVAL_DAYSが0の場合は制限なし(従来の挙動)
+    # MIN_NOTIFY_INTERVAL_DAYSが0の場合は制限なし
     if MIN_NOTIFY_INTERVAL_DAYS == 0:
         docs = (
             db.collection("url_notifications")
