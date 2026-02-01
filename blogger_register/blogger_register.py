@@ -27,7 +27,7 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 HTTP_STATUS_OK = 200
 INITIAL_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)  # 新規URL用の初期タイムスタンプ
-MIN_NOTIFY_INTERVAL_DAYS: int = 0  # 通知間隔の最小日数(0=制限なし)
+MIN_NOTIFY_INTERVAL_DAYS: int = 0  # 通知間隔の最小日数(0以下=制限なし)
 
 db = firestore.Client()
 
@@ -94,8 +94,8 @@ def get_pending_url_docs(batch_size: int) -> list[firestore.DocumentSnapshot]:
     Returns:
         List[firestore.DocumentSnapshot]: 取得したドキュメントリスト
     """
-    # MIN_NOTIFY_INTERVAL_DAYSが0の場合は制限なし
-    if MIN_NOTIFY_INTERVAL_DAYS == 0:
+    # MIN_NOTIFY_INTERVAL_DAYSが0以下の場合は制限なし
+    if MIN_NOTIFY_INTERVAL_DAYS <= 0:
         docs = (
             db.collection("url_notifications")
             .order_by("last_sent")
