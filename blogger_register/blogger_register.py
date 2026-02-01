@@ -13,10 +13,11 @@ from datetime import UTC, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, TypedDict
-from xml.etree import ElementTree as ET
+from urllib.parse import urlparse
 
 import google.auth
 import requests
+from defusedxml import ElementTree
 from google.auth.transport.requests import AuthorizedSession
 from google.cloud import firestore
 
@@ -31,6 +32,7 @@ HTTP_STATUS_OK = 200
 FIRESTORE_BATCH_LIMIT = 500
 INITIAL_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)  # 新規URL用の初期タイムスタンプ
 MIN_NOTIFY_INTERVAL_DAYS: int = 0  # 通知間隔の最小日数(0以下=制限なし)
+MAX_SITEMAP_COUNT = 100
 
 db = firestore.Client()
 
@@ -233,6 +235,21 @@ def decode_sitemap_content(content: bytes, url: str) -> bytes:
     return content
 
 
+def ensure_https_url(url: str) -> None:
+    """Sitemap URLがHTTPSかを検証する。
+
+    Args:
+        url (str): 検証対象のURL
+
+    Raises:
+        ValueError: HTTPSではない場合
+    """
+    parsed = urlparse(url)
+    if parsed.scheme.lower() != "https":
+        message = f"HTTPS以外のサイトマップURLは許可されていません: {url}"
+        raise ValueError(message)
+
+
 def extract_sitemap_entries(content: bytes) -> tuple[list[str], list[str]]:
     """Sitemap XMLからURLと子Sitemap URLを抽出する。
 
@@ -242,7 +259,7 @@ def extract_sitemap_entries(content: bytes) -> tuple[list[str], list[str]]:
     Returns:
         tuple[list[str], list[str]]: (URLリスト, 子Sitemap URLリスト)
     """
-    root = ET.fromstring(content)  # noqa: S314
+    root = ElementTree.fromstring(content)
     namespace = ""
     if root.tag.startswith("{"):
         namespace = root.tag.split("}")[0] + "}"
@@ -273,17 +290,22 @@ def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
     Returns:
         list[str]: 取得したURL一覧
     """
+    ensure_https_url(sitemap_url)
     pending_sitemaps = [sitemap_url]
     visited_sitemaps: set[str] = set()
     seen_urls: set[str] = set()
     collected_urls: list[str] = []
 
     while pending_sitemaps:
+        if len(visited_sitemaps) >= MAX_SITEMAP_COUNT:
+            message = "サイトマップ取得数が上限を超えたため処理を中断します。"
+            raise RuntimeError(message)
         current_url = pending_sitemaps.pop()
         if current_url in visited_sitemaps:
             continue
+        ensure_https_url(current_url)
         visited_sitemaps.add(current_url)
-        response = requests.get(current_url, timeout=30)
+        response = requests.get(current_url, timeout=30, verify=True)
         response.raise_for_status()
         content = decode_sitemap_content(response.content, current_url)
         urls, sitemap_urls = extract_sitemap_entries(content)

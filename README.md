@@ -117,6 +117,7 @@ python blogger_register/blogger_register.py
 | cachetools | 5.5.2 | Apache License 2.0 |
 | certifi | 2025.6.15 | Mozilla Public License 2.0 |
 | charset-normalizer | 3.4.2 | MIT License |
+| defusedxml | 0.7.1 | PSF License |
 | google-api-core | 2.25.1 | Apache License 2.0 |
 | google-api-python-client | 2.175.0 | Apache License 2.0 |
 | google-auth | 2.40.3 | Apache License 2.0 |
