@@ -281,14 +281,14 @@ def extract_sitemap_entries(content: bytes) -> tuple[list[str], list[str]]:
 
     if root.tag.endswith("urlset"):
         urls = [
-            loc.text.strip()
+            loc.text
             for loc in root.findall(f".//{namespace}url/{namespace}loc")
             if loc.text
         ]
         return urls, []
     if root.tag.endswith("sitemapindex"):
         sitemap_urls = [
-            loc.text.strip()
+            loc.text
             for loc in root.findall(f".//{namespace}sitemap/{namespace}loc")
             if loc.text
         ]
@@ -358,12 +358,12 @@ def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
     collected_urls: list[str] = []
 
     while pending_sitemaps:
-        if len(visited_sitemaps) >= MAX_SITEMAP_COUNT:
-            message = "サイトマップ取得数が上限を超えたため処理を中断します。"
-            raise RuntimeError(message)
         current_url = pending_sitemaps.pop(0)
         if current_url in visited_sitemaps:
             continue
+        if len(visited_sitemaps) >= MAX_SITEMAP_COUNT:
+            message = "サイトマップ取得数が上限を超えたため処理を中断します。"
+            raise RuntimeError(message)
         visited_sitemaps.add(current_url)
         content = fetch_sitemap_content(current_url)
         urls, sitemap_urls = parse_sitemap_content(content, current_url)
