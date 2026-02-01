@@ -164,7 +164,7 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
     """
     service = build("blogger", "v3", developerKey=api_key)
     page_token: str | None = None
-    existing_docs: dict[str, bool] = {}
+    has_last_sent: dict[str, bool] = {}
     firestore_batch_limit = 500
     fetch_batch_size = firestore_batch_limit
     base_query = (
@@ -179,11 +179,11 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
         if not docs:
             break
         for doc in docs:
-            existing_docs[doc.id] = doc.get("last_sent") is not None
+            has_last_sent[doc.id] = doc.get("last_sent") is not None
         last_doc = docs[-1]
     batch = db.batch()
     batch_count = 0
-    # pending_doc_idsは同じドキュメントの重複追加を防ぐために利用
+    # pending_doc_ids は同じドキュメントの重複追加を防ぐために利用
     pending_doc_ids: set[str] = set()
 
     def commit_batch() -> None:
@@ -191,7 +191,7 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
         if batch_count > 0:
             batch.commit()
             for doc_id in pending_doc_ids:
-                existing_docs[doc_id] = True
+                has_last_sent[doc_id] = True
             pending_doc_ids.clear()
             batch = db.batch()
             batch_count = 0
@@ -205,11 +205,8 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
             doc_id = encode_doc_id(url)
             doc_ref = db.collection("url_notifications").document(doc_id)
 
-            last_sent_exists = existing_docs.get(doc_id, False)
-            if (
-                not last_sent_exists
-                and doc_id not in pending_doc_ids
-            ):
+            last_sent_exists = has_last_sent.get(doc_id, False)
+            if not last_sent_exists:
                 batch.set(
                     doc_ref,
                     {"url": url, "last_sent": INITIAL_TIMESTAMP},
