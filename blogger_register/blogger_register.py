@@ -166,18 +166,17 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
     page_token: str | None = None
     existing_docs = {
         doc.id: (doc.to_dict() or {})
-        for doc in db.collection("url_notifications").stream()
+        for doc in db.collection("url_notifications").select(["last_sent"]).stream()
     }
     batch = db.batch()
     batch_count = 0
 
-    def commit_batch() -> tuple[firestore.WriteBatch, int]:
+    def commit_batch() -> None:
         nonlocal batch, batch_count
         if batch_count > 0:
             batch.commit()
             batch = db.batch()
             batch_count = 0
-        return batch, batch_count
 
     while True:
         posts_response: dict[str, Any] = (
@@ -206,7 +205,7 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
                 data["last_sent"] = INITIAL_TIMESTAMP
 
             if batch_count >= 500:
-                batch, batch_count = commit_batch()
+                commit_batch()
 
             print(f"FirestoreにURL登録: {url}")
         page_token = posts_response.get("nextPageToken")
