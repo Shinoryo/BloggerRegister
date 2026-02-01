@@ -164,6 +164,20 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
     """
     service = build("blogger", "v3", developerKey=api_key)
     page_token: str | None = None
+    existing_docs = {
+        doc.id: (doc.to_dict() or {})
+        for doc in db.collection("url_notifications").stream()
+    }
+    batch = db.batch()
+    batch_count = 0
+
+    def commit_batch() -> tuple[firestore.WriteBatch, int]:
+        nonlocal batch, batch_count
+        if batch_count > 0:
+            batch.commit()
+            batch = db.batch()
+            batch_count = 0
+        return batch, batch_count
 
     while True:
         posts_response: dict[str, Any] = (
@@ -174,26 +188,32 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
             doc_id = encode_doc_id(url)
             doc_ref = db.collection("url_notifications").document(doc_id)
 
-            # ドキュメントの存在チェック
-            doc = doc_ref.get()
-            if doc.exists:
-                data = doc.to_dict() or {}
-                # last_sentがなければurlと共に初期化
-                if "last_sent" not in data:
-                    doc_ref.set(
-                        {"url": url, "last_sent": INITIAL_TIMESTAMP},
-                        merge=True,
-                    )
-                # last_sentが既存の場合は何もしない
-                # URLはドキュメントIDから導出されるため更新不要
-            else:
-                # 新規登録時はlast_sentを過去の時刻で初期化
-                doc_ref.set({"url": url, "last_sent": INITIAL_TIMESTAMP})
+            data = existing_docs.get(doc_id)
+            if data is None:
+                batch.set(doc_ref, {"url": url, "last_sent": INITIAL_TIMESTAMP})
+                batch_count += 1
+                existing_docs[doc_id] = {
+                    "url": url,
+                    "last_sent": INITIAL_TIMESTAMP,
+                }
+            elif "last_sent" not in data:
+                batch.set(
+                    doc_ref,
+                    {"url": url, "last_sent": INITIAL_TIMESTAMP},
+                    merge=True,
+                )
+                batch_count += 1
+                data["last_sent"] = INITIAL_TIMESTAMP
+
+            if batch_count >= 500:
+                batch, batch_count = commit_batch()
 
             print(f"FirestoreにURL登録: {url}")
         page_token = posts_response.get("nextPageToken")
         if not page_token:
             break
+
+    commit_batch()
 
 
 def build_summary_email_body_html(results: list[NotificationResult]) -> str:

@@ -8,7 +8,7 @@ Bloggerで公開した記事のURLをGoogle Indexing APIに自動通知し、イ
 
 ### 機能一覧
 
-- Blogger APIから全記事URLを取得し、Firestoreに登録・管理します。
+- Blogger APIから全記事URLを取得し、FirestoreのURLを事前取得したキャッシュと突き合わせて登録・管理します。
 - Firestoreで各URLの通知日時を管理し、通知日時が古い順に指定件数だけURLを抽出してGoogle Indexing APIへ通知します。
 - 通知結果をHTML形式でまとめ、指定アドレスへメール送信します。
 - 各種設定値は環境変数で管理します。
@@ -77,9 +77,11 @@ python blogger_register/blogger_register.py
 1. 環境変数から各種設定値を取得（未設定の場合はエラー出力し処理中断）
 2. Google認証セッションを初期化
 3. Blogger APIから記事URL一覧をFirestoreに登録
+   - 事前にFirestoreのURL一覧をキャッシュし、ローカル判定で新規/更新対象を抽出
    - 新規URLはlast_sentをUnix epoch (1970年1月1日) で初期化し、優先的に通知されるようにする
    - 既存URLでlast_sentが欠けている場合も同様に初期化
    - 既存URLでlast_sentが存在する場合は更新不要（Firestore書き込みコスト最適化）
+   - Firestoreへの書き込みはバッチ処理でまとめて実行
 4. Firestoreから通知日時が古い順に指定件数だけURLを抽出
    - MIN_NOTIFY_INTERVAL_DAYS定数が0より大きい場合、指定日数以内に通知されたURLは除外される
 5. Google Indexing APIへ通知し、結果をFirestoreに反映（APIエラー時は標準出力にエラー内容を出力し、処理は継続）
