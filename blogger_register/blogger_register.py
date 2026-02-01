@@ -8,7 +8,7 @@ import base64
 import os
 import smtplib
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, TypedDict
@@ -27,6 +27,7 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 HTTP_STATUS_OK = 200
 INITIAL_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)  # 新規URL用の初期タイムスタンプ
+MIN_NOTIFY_INTERVAL_DAYS: int = 0  # 通知間隔の最小日数(0以下=制限なし)
 
 db = firestore.Client()
 
@@ -84,14 +85,35 @@ def encode_doc_id(url: str) -> str:
 def get_pending_url_docs(batch_size: int) -> list[firestore.DocumentSnapshot]:
     """Firestoreから送信が古い、もしくは未送信のURL通知ドキュメントを指定数取得する。
 
+    MIN_NOTIFY_INTERVAL_DAYS定数が0より大きい場合、
+    last_sentが指定日数以内のURLは除外される。
+
     Args:
         batch_size (int): 取得するドキュメント数の上限
 
     Returns:
         List[firestore.DocumentSnapshot]: 取得したドキュメントリスト
     """
+    # MIN_NOTIFY_INTERVAL_DAYSが0以下の場合は制限なし
+    if MIN_NOTIFY_INTERVAL_DAYS <= 0:
+        docs = (
+            db.collection("url_notifications")
+            .order_by("last_sent")
+            .limit(batch_size)
+            .stream()
+        )
+        return list(docs)
+
+    # MIN_NOTIFY_INTERVAL_DAYSが1以上の場合、
+    # 指定日数以前のlast_sentを持つドキュメントのみ取得
+    cutoff_time = datetime.now(tz=UTC) - timedelta(days=MIN_NOTIFY_INTERVAL_DAYS)
+    print(
+        f"MIN_NOTIFY_INTERVAL_DAYS={MIN_NOTIFY_INTERVAL_DAYS}: {cutoff_time.isoformat()}以前のURLのみ取得します。",  # noqa: E501
+    )
+
     docs = (
         db.collection("url_notifications")
+        .where("last_sent", "<=", cutoff_time)
         .order_by("last_sent")
         .limit(batch_size)
         .stream()
