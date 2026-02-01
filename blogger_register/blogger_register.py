@@ -15,6 +15,7 @@ from email.mime.text import MIMEText
 from typing import Any, TypedDict
 from urllib.parse import urlparse
 
+import certifi
 import google.auth
 import requests
 from defusedxml import ElementTree as DefusedElementTree
@@ -251,6 +252,19 @@ def ensure_https_url(url: str) -> None:
         raise ValueError(message)
 
 
+def is_https_url(url: str) -> bool:
+    """URLがHTTPSかどうかを判定する。
+
+    Args:
+        url (str): 判定対象のURL
+
+    Returns:
+        bool: HTTPSならTrue
+    """
+    parsed = urlparse(url)
+    return parsed.scheme.lower() == "https"
+
+
 def extract_sitemap_entries(content: bytes) -> tuple[list[str], list[str]]:
     """Sitemap XMLからURLと子Sitemap URLを抽出する。
 
@@ -282,6 +296,53 @@ def extract_sitemap_entries(content: bytes) -> tuple[list[str], list[str]]:
     return [], []
 
 
+def fetch_sitemap_content(sitemap_url: str) -> bytes:
+    """サイトマップのバイナリコンテンツを取得する。
+
+    Args:
+        sitemap_url (str): 取得対象のサイトマップURL
+
+    Returns:
+        bytes: 取得したコンテンツ
+    """
+    ensure_https_url(sitemap_url)
+    try:
+        response = requests.get(
+            sitemap_url,
+            timeout=30,
+            verify=certifi.where(),
+            headers={"User-Agent": USER_AGENT},
+        )
+        response.raise_for_status()
+    except requests.SSLError as exc:
+        message = f"サイトマップのSSL検証に失敗しました: {sitemap_url}"
+        raise RuntimeError(message) from exc
+    except (requests.RequestException, ValueError) as exc:
+        message = f"サイトマップの取得に失敗しました: {sitemap_url}"
+        raise RuntimeError(message) from exc
+    return decode_sitemap_content(response.content, sitemap_url)
+
+
+def parse_sitemap_content(
+    content: bytes,
+    sitemap_url: str,
+) -> tuple[list[str], list[str]]:
+    """サイトマップのXMLを解析してURLを抽出する。
+
+    Args:
+        content (bytes): 解析対象のXMLバイト列
+        sitemap_url (str): 解析対象のURL
+
+    Returns:
+        tuple[list[str], list[str]]: (URLリスト, 子Sitemap URLリスト)
+    """
+    try:
+        return extract_sitemap_entries(content)
+    except (DefusedElementTree.ParseError, ValueError) as exc:
+        message = f"サイトマップXMLの解析に失敗しました: {sitemap_url}"
+        raise RuntimeError(message) from exc
+
+
 def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
     """サイトマップからURL一覧を取得する。
 
@@ -291,7 +352,6 @@ def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
     Returns:
         list[str]: 取得したURL一覧
     """
-    ensure_https_url(sitemap_url)
     pending_sitemaps = [sitemap_url]
     visited_sitemaps: set[str] = set()
     seen_urls: set[str] = set()
@@ -304,26 +364,13 @@ def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
         current_url = pending_sitemaps.pop(0)
         if current_url in visited_sitemaps:
             continue
-        ensure_https_url(current_url)
         visited_sitemaps.add(current_url)
-        try:
-            response = requests.get(
-                current_url,
-                timeout=30,
-                verify=True,
-                headers={"User-Agent": USER_AGENT},
-            )
-            response.raise_for_status()
-        except (requests.RequestException, ValueError) as exc:
-            message = f"サイトマップの取得に失敗しました: {current_url}"
-            raise RuntimeError(message) from exc
-        content = decode_sitemap_content(response.content, current_url)
-        try:
-            urls, sitemap_urls = extract_sitemap_entries(content)
-        except (DefusedElementTree.ParseError, ValueError) as exc:
-            message = f"サイトマップXMLの解析に失敗しました: {current_url}"
-            raise RuntimeError(message) from exc
+        content = fetch_sitemap_content(current_url)
+        urls, sitemap_urls = parse_sitemap_content(content, current_url)
         for url in urls:
+            if not is_https_url(url):
+                print(f"HTTPS以外のURLをスキップしました: {url}")
+                continue
             if url not in seen_urls:
                 seen_urls.add(url)
                 collected_urls.append(url)
