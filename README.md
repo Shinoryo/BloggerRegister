@@ -59,6 +59,8 @@ Bloggerで公開した記事のURLをGoogle Indexing APIに自動通知し、イ
 
 新規に取得したURLはFirestoreへ登録時、`last_sent` フィールドに Unix epoch (1970年1月1日) が設定されます。これにより、新規記事が優先的に通知されるようになります。通知送信成功後は `last_sent` が現在時刻に更新され、次回実行時の優先度が下がります。
 
+既存URLの場合、`last_sent` フィールドが存在しない場合のみ Unix epoch で初期化されます。`last_sent` が既に存在する場合、URLはドキュメントIDから導出されるため更新は行われません（Firestore書き込みコストの最適化）。
+
 ## 実行方法
 
 Google Cloud Functions等のサーバーレス環境での実行を想定していますが、ローカル実行も可能です。
@@ -73,7 +75,10 @@ python blogger_register/blogger_register.py
 
 1. 環境変数から各種設定値を取得（未設定の場合はエラー出力し処理中断）
 2. Google認証セッションを初期化
-3. Blogger APIから記事URL一覧をFirestoreに登録(新規URLはlast_sentをUnix epoch (1970年1月1日) で初期化し、優先的に通知されるようにする)
+3. Blogger APIから記事URL一覧をFirestoreに登録
+   - 新規URLはlast_sentをUnix epoch (1970年1月1日) で初期化し、優先的に通知されるようにする
+   - 既存URLでlast_sentが欠けている場合も同様に初期化
+   - 既存URLでlast_sentが存在する場合は更新不要（Firestore書き込みコスト最適化）
 4. Firestoreから通知日時が古い順に指定件数だけURLを抽出
 5. Google Indexing APIへ通知し、結果をFirestoreに反映（APIエラー時は標準出力にエラー内容を出力し、処理は継続）
 6. 全通知結果をHTMLメールで送信（メール送信失敗時は標準出力にエラー内容を出力する）

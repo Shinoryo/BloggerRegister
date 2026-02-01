@@ -155,11 +155,15 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
             # ドキュメントの存在チェック
             doc = doc_ref.get()
             if doc.exists:
-                # 既存ドキュメントにlast_sentがなければ初期化
-                data = doc.to_dict()
+                data = doc.to_dict() or {}
+                # last_sentがなければurlと共に初期化
                 if "last_sent" not in data:
-                    doc_ref.update({"last_sent": INITIAL_TIMESTAMP})
-                doc_ref.set({"url": url}, merge=True)
+                    doc_ref.set(
+                        {"url": url, "last_sent": INITIAL_TIMESTAMP},
+                        merge=True,
+                    )
+                # last_sentが既存の場合は何もしない
+                # URLはドキュメントIDから導出されるため更新不要
             else:
                 # 新規登録時はlast_sentを過去の時刻で初期化
                 doc_ref.set({"url": url, "last_sent": INITIAL_TIMESTAMP})
