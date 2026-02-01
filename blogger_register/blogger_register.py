@@ -26,6 +26,7 @@ SLEEP_SECONDS: int = 10  # API制限緩和のための待機時間(秒)
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 HTTP_STATUS_OK = 200
+FIRESTORE_BATCH_LIMIT = 500
 INITIAL_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)  # 新規URL用の初期タイムスタンプ
 MIN_NOTIFY_INTERVAL_DAYS: int = 0  # 通知間隔の最小日数(0以下=制限なし)
 
@@ -130,6 +131,57 @@ def update_last_sent_timestamp(doc_ref: firestore.DocumentReference) -> None:
     doc_ref.update({"last_sent": firestore.SERVER_TIMESTAMP})
 
 
+def build_last_sent_cache(batch_limit: int) -> dict[str, bool]:
+    """Firestoreからlast_sentの有無をキャッシュする。
+
+    Args:
+        batch_limit (int): 1回の取得件数
+
+    Returns:
+        dict[str, bool]: ドキュメントIDごとのlast_sent有無
+    """
+    has_last_sent: dict[str, bool] = {}
+    base_query = (
+        db.collection("url_notifications")
+        .order_by("__name__")
+        .limit(batch_limit)
+    )
+    last_doc = None
+    while True:
+        query = base_query.start_after(last_doc) if last_doc else base_query
+        docs = list(query.stream())
+        if not docs:
+            break
+        for doc in docs:
+            has_last_sent[doc.id] = doc.get("last_sent") is not None
+        last_doc = docs[-1]
+    return has_last_sent
+
+
+def commit_pending_batch(
+    batch: firestore.WriteBatch,
+    pending_doc_ids: set[str],
+    has_last_sent: dict[str, bool],
+) -> firestore.WriteBatch:
+    """バッチ書き込みを実行してキャッシュを更新する。
+
+    Args:
+        batch (firestore.WriteBatch): 書き込みバッチ
+        pending_doc_ids (set[str]): バッチ対象ドキュメントID
+        has_last_sent (dict[str, bool]): last_sentの存在キャッシュ
+
+    Returns:
+        firestore.WriteBatch: 次のバッチ
+    """
+    if not pending_doc_ids:
+        return batch
+    batch.commit()
+    for doc_id in pending_doc_ids:
+        has_last_sent[doc_id] = True
+    pending_doc_ids.clear()
+    return db.batch()
+
+
 def send_indexing_notification(
     url: str,
     authed_session: AuthorizedSession,
@@ -162,39 +214,12 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
         blog_id (str): ブログID
         api_key (str): APIキー
     """
+    has_last_sent = build_last_sent_cache(FIRESTORE_BATCH_LIMIT)
     service = build("blogger", "v3", developerKey=api_key)
     page_token: str | None = None
-    has_last_sent: dict[str, bool] = {}
-    firestore_batch_limit = 500
-    fetch_batch_size = firestore_batch_limit
-    base_query = (
-        db.collection("url_notifications")
-        .order_by("__name__")
-        .limit(fetch_batch_size)
-    )
-    last_doc = None
-    while True:
-        query = base_query.start_after(last_doc) if last_doc else base_query
-        docs = list(query.stream())
-        if not docs:
-            break
-        for doc in docs:
-            has_last_sent[doc.id] = doc.get("last_sent") is not None
-        last_doc = docs[-1]
     batch = db.batch()
-    batch_count = 0
     # pending_doc_ids はバッチ確定前の重複追加を防ぐために利用
     pending_doc_ids: set[str] = set()
-
-    def commit_batch() -> None:
-        nonlocal batch, batch_count, pending_doc_ids
-        if batch_count > 0:
-            batch.commit()
-            for doc_id in pending_doc_ids:
-                has_last_sent[doc_id] = True
-            pending_doc_ids.clear()
-            batch = db.batch()
-            batch_count = 0
 
     while True:
         posts_response: dict[str, Any] = (
@@ -203,27 +228,26 @@ def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
         for post in posts_response.get("items", []):
             url: str = post["url"]
             doc_id = encode_doc_id(url)
-            doc_ref = db.collection("url_notifications").document(doc_id)
 
             last_sent_exists = has_last_sent.get(doc_id, False)
             if not last_sent_exists and doc_id not in pending_doc_ids:
+                doc_ref = db.collection("url_notifications").document(doc_id)
                 batch.set(
                     doc_ref,
                     {"url": url, "last_sent": INITIAL_TIMESTAMP},
                     merge=True,
                 )
-                batch_count += 1
                 pending_doc_ids.add(doc_id)
 
-            if batch_count >= firestore_batch_limit:
-                commit_batch()
+            if len(pending_doc_ids) >= FIRESTORE_BATCH_LIMIT:
+                batch = commit_pending_batch(batch, pending_doc_ids, has_last_sent)
 
             print(f"FirestoreにURL登録: {url}")
         page_token = posts_response.get("nextPageToken")
         if not page_token:
             break
 
-    commit_batch()
+    commit_pending_batch(batch, pending_doc_ids, has_last_sent)
 
 
 def build_summary_email_body_html(results: list[NotificationResult]) -> str:
