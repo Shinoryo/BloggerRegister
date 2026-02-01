@@ -165,7 +165,7 @@ def commit_pending_batch(
 ) -> None:
     """バッチ書き込みを実行してキャッシュを更新する。
 
-    pending_doc_ids が空の場合は書き込みせず、既存のバッチを返す。
+    pending_doc_ids が空の場合は書き込みを行わず終了する。
     pending_doc_ids と has_last_sent はこの関数内で更新される。
 
     Args:
