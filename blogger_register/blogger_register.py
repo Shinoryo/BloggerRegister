@@ -305,21 +305,28 @@ def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
             continue
         ensure_https_url(current_url)
         visited_sitemaps.add(current_url)
-        response = requests.get(current_url, timeout=30, verify=True)
-        response.raise_for_status()
+        try:
+            response = requests.get(current_url, timeout=30, verify=True)
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            message = f"サイトマップの取得に失敗しました: {current_url}"
+            raise RuntimeError(message) from exc
         content = decode_sitemap_content(response.content, current_url)
-        urls, sitemap_urls = extract_sitemap_entries(content)
+        try:
+            urls, sitemap_urls = extract_sitemap_entries(content)
+        except ElementTree.ParseError as exc:
+            message = f"サイトマップXMLの解析に失敗しました: {current_url}"
+            raise RuntimeError(message) from exc
         for url in urls:
             if url not in seen_urls:
                 seen_urls.add(url)
                 collected_urls.append(url)
-        pending_sitemaps.extend(
-            [
-                child_url
-                for child_url in sitemap_urls
-                if child_url not in visited_sitemaps
-            ],
-        )
+        for child_url in sitemap_urls:
+            if (
+                child_url not in visited_sitemaps
+                and child_url not in pending_sitemaps
+            ):
+                pending_sitemaps.append(child_url)
 
     return collected_urls
 
