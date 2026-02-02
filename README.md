@@ -36,8 +36,6 @@
 | INITIAL_TIMESTAMP | 新規URL登録時のlast_sent初期値 | Unix epoch (1970年1月1日) |
 | MIN_NOTIFY_INTERVAL_DAYS | 通知間隔の最小日数。この日数以内に通知されたURLはバッチ対象から除外される（0以下=制限なし） | 0 |
 | FIRESTORE_BATCH_LIMIT | Firestoreの取得・書き込みバッチ上限 | 500 |
-| MAX_SITEMAP_COUNT | サイトマップの取得上限（循環参照対策） | 100 |
-| USER_AGENT | サイトマップ取得時のUser-Agent | "SitemapIndexer/1.0 (<https://github.com/Shinoryo/BloggerRegister>)" |
 
 ## 入出力
 

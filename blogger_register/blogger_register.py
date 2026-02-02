@@ -6,7 +6,6 @@ Licensed under the MIT License
 
 import base64
 import gzip
-import logging
 import os
 import smtplib
 import time
@@ -15,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, TypedDict
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import certifi
 import google.auth
@@ -35,10 +34,7 @@ HTTP_STATUS_OK = 200
 FIRESTORE_BATCH_LIMIT = 500
 INITIAL_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)  # 新規URL用の初期タイムスタンプ
 MIN_NOTIFY_INTERVAL_DAYS: int = 0  # 通知間隔の最小日数(0以下=制限なし)
-MAX_SITEMAP_COUNT = 100  # 過剰なサイトマップ循環取得を防ぐ上限
-USER_AGENT = "SitemapIndexer/1.0 (https://github.com/Shinoryo/BloggerRegister)"
 
-logger = logging.getLogger(__name__)
 db = firestore.Client()
 
 
@@ -268,15 +264,17 @@ def is_https_url(url: str) -> bool:
 
 
 def normalize_sitemap_url(url: str) -> str:
-    """サイトマップURLの前後空白を除去し、空なら例外を投げる。
+    """URLの空白除去と正規化を行う。
 
-    HTTPSの検証は呼び出し元で行う。
+    - 前後空白の除去
+    - クエリパラメータとフラグメントの除外
+    - 末尾の/を統一 (ルート以外は除外)
 
     Args:
         url (str): 正規化対象のURL
 
     Returns:
-        str: 前後空白を除去したURL
+        str: 正規化後のURL
 
     Raises:
         ValueError: 空文字の場合
@@ -285,7 +283,20 @@ def normalize_sitemap_url(url: str) -> str:
     if not normalized:
         message = "サイトマップURLが空のため取得できません。"
         raise ValueError(message)
-    return normalized
+    parsed = urlparse(normalized)
+    path = parsed.path.rstrip("/")
+    if not path:
+        path = "/"
+    return urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            path,
+            parsed.params,
+            "",
+            "",
+        ),
+    )
 
 
 def extract_sitemap_entries(content: bytes) -> tuple[list[str], list[str]]:
@@ -340,13 +351,12 @@ def fetch_sitemap_content(sitemap_url: str) -> bytes:
     """
     normalized_url = normalize_sitemap_url(sitemap_url)
     if not is_https_url(normalized_url):
-        logger.warning("HTTPS以外のサイトマップURLを取得します: %s", normalized_url)
+        print(f"警告: HTTPS以外のサイトマップURLを取得します: {normalized_url}")
     try:
         response = requests.get(
             normalized_url,
             timeout=30,
             verify=certifi.where(),
-            headers={"User-Agent": USER_AGENT},
         )
         response.raise_for_status()
     except requests.SSLError as exc:
@@ -400,15 +410,12 @@ def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
         current_url = pending_sitemaps.popleft()
         if current_url in visited_sitemaps:
             continue
-        if len(visited_sitemaps) >= MAX_SITEMAP_COUNT:
-            message = "サイトマップ取得数が上限を超えたため処理を中断します。"
-            raise RuntimeError(message)
         visited_sitemaps.add(current_url)
         content = fetch_sitemap_content(current_url)
         urls, sitemap_urls = parse_sitemap_content(content, current_url)
         for url in urls:
             if not is_https_url(url):
-                logger.warning("HTTPS以外のURLを登録対象外としました: %s", url)
+                print(f"警告: HTTPS以外のURLを登録対象外としました: {url}")
                 continue
             if url not in seen_urls:
                 seen_urls.add(url)
