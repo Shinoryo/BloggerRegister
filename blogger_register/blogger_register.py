@@ -231,6 +231,8 @@ def decode_sitemap_content(
     Args:
         content (bytes): 取得したSitemapのバイト列
         url (str): SitemapのURL
+        content_encoding (str | None): レスポンスヘッダーのContent-Encoding値。
+            "gzip"などが指定されている場合はgzipとして解凍を試みる。
 
     Returns:
         bytes: デコード済みのSitemap
