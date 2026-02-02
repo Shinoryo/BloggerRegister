@@ -5,18 +5,23 @@ Licensed under the MIT License
 """
 
 import base64
+import gzip
 import os
 import smtplib
 import time
+from collections import deque
 from datetime import UTC, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, TypedDict
+from urllib.parse import urlparse, urlunparse
 
+import certifi
 import google.auth
+import requests
+from defusedxml import ElementTree as DefusedElementTree
 from google.auth.transport.requests import AuthorizedSession
 from google.cloud import firestore
-from googleapiclient.discovery import build
 
 # 定数定義
 SCOPES: list[str] = ["https://www.googleapis.com/auth/indexing"]
@@ -34,8 +39,7 @@ db = firestore.Client()
 
 
 class EnvVars(TypedDict):
-    blogger_api_key: str
-    blog_id: str
+    sitemap_url: str
     mail_from: str
     mail_password: str
     mail_to: str
@@ -58,8 +62,7 @@ def get_env_vars() -> EnvVars:
         EnvironmentError: 必須環境変数が未設定の場合
     """
     env = {
-        "blogger_api_key": os.environ.get("BLOGGER_INDEX_REGIST_API_KEY"),
-        "blog_id": os.environ.get("BLOG_ID"),
+        "sitemap_url": os.environ.get("SITEMAP_URL"),
         "mail_from": os.environ.get("MAIL_FROM"),
         "mail_password": os.environ.get("MAIL_PASSWORD"),
         "mail_to": os.environ.get("MAIL_TO"),
@@ -218,49 +221,245 @@ def send_indexing_notification(
     return success, response.status_code, response.text
 
 
-def register_blog_urls_to_firestore(blog_id: str, api_key: str) -> None:
-    """Blogger APIからブログ投稿URL一覧を取得し、Firestoreに登録する。
+def decode_sitemap_content(
+    content: bytes,
+    url: str,
+    content_encoding: str | None = None,
+) -> bytes:
+    """Sitemapコンテンツを必要に応じてデコードする。
 
     Args:
-        blog_id (str): ブログID
-        api_key (str): APIキー
+        content (bytes): 取得したSitemapのバイト列
+        url (str): SitemapのURL
+        content_encoding (str | None): レスポンスヘッダーのContent-Encoding値。
+            "gzip"などが指定されている場合はgzipとして解凍を試みる。
+
+    Returns:
+        bytes: デコード済みのSitemap
+    """
+    if content_encoding and "gzip" in content_encoding.lower():
+        try:
+            return gzip.decompress(content)
+        except OSError as exc:
+            message = f"サイトマップの解凍に失敗しました: {url}"
+            raise RuntimeError(message) from exc
+    if url.lower().endswith(".gz"):
+        try:
+            return gzip.decompress(content)
+        except OSError as exc:
+            message = f"サイトマップの解凍に失敗しました: {url}"
+            raise RuntimeError(message) from exc
+    return content
+
+
+def is_https_url(url: str) -> bool:
+    """URLがHTTPSかどうかを判定する。
+
+    Args:
+        url (str): 判定対象のURL
+
+    Returns:
+        bool: HTTPSならTrue
+    """
+    parsed = urlparse(url)
+    return parsed.scheme.lower() == "https"
+
+
+def normalize_sitemap_url(url: str) -> str:
+    """URLの空白除去と正規化を行う。
+
+    - 前後空白の除去
+    - クエリパラメータとフラグメントの除外
+    - 末尾の/を統一 (ルート以外は除外して重複を抑制)
+
+    Args:
+        url (str): 正規化対象のURL
+
+    Returns:
+        str: 正規化後のURL
+
+    Raises:
+        ValueError: 空文字の場合
+    """
+    normalized = url.strip()
+    if not normalized:
+        message = "サイトマップURLが空のため取得できません。"
+        raise ValueError(message)
+    parsed = urlparse(normalized)
+    path = parsed.path.rstrip("/")
+    if not path:
+        path = "/"
+    return urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            path,
+            parsed.params,
+            "",
+            "",
+        ),
+    )
+
+
+def extract_sitemap_entries(content: bytes) -> tuple[list[str], list[str]]:
+    """Sitemap XMLからURLと子Sitemap URLを抽出する。
+
+    - rootが urlset の場合: url/loc からURLリストを取得
+    - rootが sitemapindex の場合: sitemap/loc から子Sitemap URLを取得
+    - URLは前後空白を除去し、空の値は除外する
+
+    Args:
+        content (bytes): XMLコンテンツ
+
+    Returns:
+        tuple[list[str], list[str]]: (URLリスト, 子Sitemap URLリスト)
+    """
+    root = DefusedElementTree.fromstring(content)
+    namespace = ""
+    if root.tag.startswith("{"):
+        namespace = root.tag.partition("}")[0] + "}"
+
+    if root.tag.endswith("urlset"):
+        urls: list[str] = []
+        for loc in root.findall(f".//{namespace}url/{namespace}loc"):
+            if not loc.text:
+                continue
+            try:
+                urls.append(normalize_sitemap_url(loc.text))
+            except ValueError:
+                continue
+        return urls, []
+    if root.tag.endswith("sitemapindex"):
+        sitemap_urls: list[str] = []
+        for loc in root.findall(f".//{namespace}sitemap/{namespace}loc"):
+            if not loc.text:
+                continue
+            try:
+                sitemap_urls.append(normalize_sitemap_url(loc.text))
+            except ValueError:
+                continue
+        return [], sitemap_urls
+    return [], []
+
+
+def fetch_sitemap_content(sitemap_url: str) -> bytes:
+    """サイトマップのバイナリコンテンツを取得する。
+
+    Args:
+        sitemap_url (str): 取得対象のサイトマップURL
+
+    Returns:
+        bytes: 取得したコンテンツ
+    """
+    normalized_url = normalize_sitemap_url(sitemap_url)
+    if not is_https_url(normalized_url):
+        print(f"警告: HTTPS以外のサイトマップURLを取得します: {normalized_url}")
+    try:
+        response = requests.get(
+            normalized_url,
+            timeout=30,
+            verify=certifi.where(),
+        )
+        response.raise_for_status()
+    except requests.SSLError as exc:
+        message = f"サイトマップのSSL検証に失敗しました: {sitemap_url}"
+        raise RuntimeError(message) from exc
+    except (requests.RequestException, ValueError) as exc:
+        message = f"サイトマップの取得に失敗しました: {sitemap_url}"
+        raise RuntimeError(message) from exc
+    return decode_sitemap_content(
+        response.content,
+        sitemap_url,
+        response.headers.get("Content-Encoding"),
+    )
+
+
+def parse_sitemap_content(
+    content: bytes,
+    sitemap_url: str,
+) -> tuple[list[str], list[str]]:
+    """サイトマップのXMLを解析してURLを抽出する。
+
+    Args:
+        content (bytes): 解析対象のXMLバイト列
+        sitemap_url (str): 解析対象のURL
+
+    Returns:
+        tuple[list[str], list[str]]: (URLリスト, 子Sitemap URLリスト)
+    """
+    try:
+        return extract_sitemap_entries(content)
+    except (DefusedElementTree.ParseError, ValueError, UnicodeError) as exc:
+        message = f"サイトマップXMLの解析に失敗しました: {sitemap_url}"
+        raise RuntimeError(message) from exc
+
+
+def fetch_sitemap_urls(sitemap_url: str) -> list[str]:
+    """サイトマップからURL一覧を取得する。
+
+    Args:
+        sitemap_url (str): 取得対象のサイトマップURL
+
+    Returns:
+        list[str]: 取得したURL一覧
+    """
+    pending_sitemaps = deque([normalize_sitemap_url(sitemap_url)])
+    visited_sitemaps: set[str] = set()
+    seen_urls: set[str] = set()
+    collected_urls: list[str] = []
+
+    while pending_sitemaps:
+        current_url = pending_sitemaps.popleft()
+        if current_url in visited_sitemaps:
+            continue
+        visited_sitemaps.add(current_url)
+        content = fetch_sitemap_content(current_url)
+        urls, sitemap_urls = parse_sitemap_content(content, current_url)
+        for url in urls:
+            if not is_https_url(url):
+                print(f"警告: HTTPS以外のURLを登録対象外としました: {url}")
+                continue
+            if url not in seen_urls:
+                seen_urls.add(url)
+                collected_urls.append(url)
+        for child_url in sitemap_urls:
+            if (
+                child_url not in visited_sitemaps
+                and child_url not in pending_sitemaps
+            ):
+                pending_sitemaps.append(child_url)
+
+    return collected_urls
+
+
+def register_sitemap_urls_to_firestore(sitemap_url: str) -> None:
+    """サイトマップからURL一覧を取得し、Firestoreに登録する。
+
+    Args:
+        sitemap_url (str): サイトマップURL
     """
     has_last_sent = build_last_sent_cache(FIRESTORE_BATCH_LIMIT)
-
-    service = build("blogger", "v3", developerKey=api_key)
-    page_token: str | None = None
     batch = db.batch()
     # pending_doc_ids はバッチ確定前の重複追加を防ぐために利用
     pending_doc_ids: set[str] = set()
 
-    while True:
-        posts_response: dict[str, Any] = (
-            service.posts().list(blogId=blog_id, pageToken=page_token).execute()
-        )
-        for post in posts_response.get("items", []):
-            url: str | None = post.get("url")
-            if not url:
-                # URL フィールドが存在しない投稿はスキップ
-                continue
-            doc_id = encode_doc_id(url)
+    sitemap_urls = fetch_sitemap_urls(sitemap_url)
+    for url in sitemap_urls:
+        doc_id = encode_doc_id(url)
 
-            last_sent_exists = has_last_sent.get(doc_id, False)
-            if not last_sent_exists and doc_id not in pending_doc_ids:
-                doc_ref = db.collection("url_notifications").document(doc_id)
-                batch.set(
-                    doc_ref,
-                    {"url": url, "last_sent": INITIAL_TIMESTAMP},
-                    merge=True,
-                )
-                pending_doc_ids.add(doc_id)
-                print(f"FirestoreにURL登録: {url}")
+        last_sent_exists = has_last_sent.get(doc_id, False)
+        if not last_sent_exists and doc_id not in pending_doc_ids:
+            doc_ref = db.collection("url_notifications").document(doc_id)
+            batch.set(
+                doc_ref,
+                {"url": url, "last_sent": INITIAL_TIMESTAMP},
+                merge=True,
+            )
+            pending_doc_ids.add(doc_id)
+            print(f"FirestoreにURL登録: {url}")
 
-            if len(pending_doc_ids) >= FIRESTORE_BATCH_LIMIT:
-                batch = commit_pending_batch(batch, pending_doc_ids, has_last_sent)
-
-        page_token = posts_response.get("nextPageToken")
-        if not page_token:
-            break
+        if len(pending_doc_ids) >= FIRESTORE_BATCH_LIMIT:
+            batch = commit_pending_batch(batch, pending_doc_ids, has_last_sent)
 
     batch = commit_pending_batch(batch, pending_doc_ids, has_last_sent)
 
@@ -326,7 +525,7 @@ def build_summary_email_body_html(results: list[NotificationResult]) -> str:
 
 def main(request: Any) -> tuple[dict[str, Any], int]:  # noqa: ANN401, ARG001
     """Cloud Functionsのエントリポイント。
-    Blogger APIからURLを取得しFirestoreに登録後、未送信・古い通知をAPIに送信し更新する。
+    サイトマップからURLを取得しFirestoreに登録後、未送信・古い通知をAPIに送信し更新する。
 
     Args:
         request (Any): HTTPリクエストオブジェクト(Cloud Functions仕様)
@@ -347,12 +546,9 @@ def main(request: Any) -> tuple[dict[str, Any], int]:  # noqa: ANN401, ARG001
     authed_session = AuthorizedSession(credentials)
     print(f"認証セッションの取得に成功しました。スコープ: {SCOPES}")
 
-    # Blogger APIからURL一覧をFirestoreに登録
-    print("Blogger APIからURL一覧を取得し、Firestoreに登録します。")
-    register_blog_urls_to_firestore(
-        blog_id=env["blog_id"],
-        api_key=env["blogger_api_key"],
-    )
+    # サイトマップからURL一覧をFirestoreに登録
+    print("サイトマップからURL一覧を取得し、Firestoreに登録します。")
+    register_sitemap_urls_to_firestore(env["sitemap_url"])
 
     # Firestoreから送信待ちURLを取得
     print(f"Firestoreから送信待ちのURLを最大{BATCH_SIZE}件取得します。")
